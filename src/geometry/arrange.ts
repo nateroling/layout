@@ -22,9 +22,9 @@ export type Arrange = 'treev' | 'wrap' | 'nested' | 'radial' | 'spiral';
 export const ARRANGES: Arrange[] = ['treev', 'wrap', 'nested', 'radial', 'spiral'];
 
 /** How a renderer should draw parent -> child wires for an arrangement. */
-export type WireStyle = 'elbow' | 'bus' | 'straight' | 'none';
+export type WireStyle = 'elbow' | 'bus' | 'straight' | 'chain' | 'none';
 export function wireStyle(a: unknown): WireStyle {
-  return a === 'wrap' ? 'bus' : a === 'radial' || a === 'spiral' ? 'straight' : a === 'nested' ? 'none' : 'elbow';
+  return a === 'wrap' ? 'bus' : a === 'spiral' ? 'chain' : a === 'radial' ? 'straight' : a === 'nested' ? 'none' : 'elbow';
 }
 
 const E = 1e-9;
@@ -332,13 +332,15 @@ export function placeSpiral(root: LDir, g: GeoOptions, m: Map<string, Measured>)
   };
   size(root);
   const nodes: LayoutNode[] = [];
-  const rec = (d: LDir, ox: number, oy: number, parent: string | null) => {
+  // Wires follow the coil: the first child hangs off its parent, every later child off the
+  // sibling before it (Frame.wires = 'chain', LayoutNode.link).
+  const rec = (d: LDir, ox: number, oy: number, parent: string | null, link?: string) => {
     const me = m.get(d.id)!;
     const b = blocks.get(d.id)!;
     const x = ox + b.px, y = oy + b.py;
-    nodes.push({ id: d.id, kind: 'dir', path: d.path, parent, x, y, w: me.pw, h: me.ph, ghost: d.ghost || undefined });
+    nodes.push({ id: d.id, kind: 'dir', path: d.path, parent, x, y, w: me.pw, h: me.ph, ghost: d.ghost || undefined, link });
     pushFiles(nodes, d, me, g, x + g.pad, y + g.pad, !!d.ghost);
-    d.dirs.forEach((c, i) => rec(c, ox + b.kx[i], oy + b.ky[i], d.id));
+    d.dirs.forEach((c, i) => rec(c, ox + b.kx[i], oy + b.ky[i], d.id, i > 0 ? d.dirs[i - 1].id : undefined));
   };
   rec(root, 0, 0, null);
   return nodes;

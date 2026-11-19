@@ -66,8 +66,9 @@ file grid and its children's districts, shelf-packed near-square, no wires. `rad
 angles around the root, one ring per depth, each ring the smallest radius that keeps platforms' circumcircles
 apart (rounded up to a whole cell). `spiral` = recursive: a directory's children's blocks coil around its
 platform counter-clockwise in strips (bottom, right, top, left), a strip ending where the next block would pass
-the current box's side; straight wires. Band-width reservations only affect `treev` and `radial`. A Frame carries
-`wires` (elbow|bus|straight|none) so renderers draw the arrangement's connectors.
+the current box's side. Wires follow the coil (`wires=chain`): the first child links to its parent, each later
+child to the sibling before it (`LayoutNode.link`; the player carries it in the dirs' path field). Band-width reservations only affect `treev` and `radial`. A Frame carries
+`wires` (elbow|bus|straight|chain|none) so renderers draw the arrangement's connectors.
 
 | strategy | option | type | default | meaning |
 |---|---|---|---|---|

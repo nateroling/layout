@@ -11,6 +11,7 @@
 //   mask    := bit 0 x, 1 y, 2 w, 3 h, 4 flags, 5 modified, 6 sizeBucket, 7 pathIdx
 //   x,y,w,h := zigzag delta of round(v*100) vs the node's previous value (0 when new)
 //   flags   := 1 = ghost;  modified := zigzag delta;  sizeBucket, pathIdx := raw
+//   (dirs use pathIdx for the wire source instead: node idx + 1 of Frame node.link, 0 = parent)
 //
 // Node identity: directories by id; live files by `cid` (the Runner's rename-following
 // identity, so a renamed file is one node even under followRenames=false, matching the
@@ -131,7 +132,7 @@ export class PlayerEncoder {
         n.ghost ? 1 : 0,
         n.kind === 'file' ? (n.modified ?? 0) : 0,
         n.kind === 'file' ? sizeBucket(n.size ?? 0) : 0,
-        n.kind === 'file' ? this.strings.id(n.path) : 0,
+        n.kind === 'file' ? this.strings.id(n.path) : n.link ? (this.idx.get(n.link) ?? -1) + 1 : 0,
       ];
       cur.set(i, v);
       sum += pdSumTerm(i, v[0], v[1], v[2], v[3], v[4]);

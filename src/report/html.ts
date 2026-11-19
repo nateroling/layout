@@ -491,14 +491,15 @@ function client(): void {
     g.lineWidth = Math.max(lw, 0.12);
     g.beginPath();
     for (let k = 0; k < st.n; k++) {
-      if (!st.live[k] || kinds[k] !== 'd' || par[k] < 0 || !st.live[par[k]]) continue;
-      const q = par[k];
+      if (!st.live[k] || kinds[k] !== 'd' || par[k] < 0) continue;
+      const q = F[7][k] > 0 && st.live[F[7][k] - 1] ? F[7][k] - 1 : par[k];
+      if (!st.live[q]) continue;
       if (!opts.ghosts && (F[4][k] & 1 || F[4][q] & 1)) continue;
       const ws = P.p.wires || 'elbow';
       if (ws === 'none') continue;
       const px = F[0][q] / 100, py = F[1][q] / 100, pw = F[2][q] / 100, ph = F[3][q] / 100;
       const cx = F[0][k] / 100, cy = F[1][k] / 100, cw = F[2][k] / 100, chh = F[3][k] / 100;
-      if (ws === 'straight') {
+      if (ws === 'straight' || ws === 'chain') {
         g.moveTo(px + pw / 2, py + ph / 2); g.lineTo(cx + cw / 2, cy + chh / 2);
         continue;
       }
@@ -628,9 +629,17 @@ function client(): void {
         const k = f.configs.findIndex((c: any) => c.label === label);
         if (k < 0) return;
         const fig = document.createElement('figure');
-        fig.innerHTML = '<figcaption><b></b> <span class="muted"></span></figcaption><canvas></canvas>';
+        fig.innerHTML = '<figcaption><button class="cfocus" title="focus this view">⤢</button><b></b> <span class="muted"></span></figcaption><canvas></canvas>';
         grid.appendChild(fig);
         (fig.querySelector('b') as any).textContent = label;
+        (fig.querySelector('button') as any).addEventListener('click', () => {
+          const on = !grid.classList.contains('focused') || !fig.classList.contains('focus');
+          grid.classList.toggle('focused', on);
+          grid.querySelectorAll('figure').forEach((x: any) => x.classList.toggle('focus', on && x === fig));
+          grid.querySelectorAll('button.cfocus').forEach((b: any) => { b.textContent = on && b.closest('figure') === fig ? '✕ all' : '⤢'; });
+          draw4();
+          if (on) fig.scrollIntoView({ block: 'nearest' });
+        });
         cells.push({ P: player(fi, k), cv: fig.querySelector('canvas'), cap: fig.querySelector('span') });
       });
       if (!cells.length) return;
@@ -654,15 +663,17 @@ function client(): void {
     function draw4() {
       if (!cells.length) return;
       const same = $('#csame').checked;
+      const focused = grid.classList.contains('focused');
       cells.forEach((c) => {
         const w = c.cv.parentElement.clientWidth;
-        c.cv.style.height = Math.round(w) + 'px';
+        c.cv.style.height = Math.round(focused ? Math.min(w, window.innerHeight * 0.8) : w) + 'px';
       });
       // shared scale: the smallest fit scale, so the biggest layout fills its square
       let s = Infinity;
-      if (same) cells.forEach((c) => { s = Math.min(s, c.cv.clientWidth / c.P.c.vp.w, c.cv.clientHeight / c.P.c.vp.h); });
+      if (same) cells.forEach((c) => { if (c.cv.clientWidth) s = Math.min(s, c.cv.clientWidth / c.P.c.vp.w, c.cv.clientHeight / c.P.c.vp.h); });
       const meta0 = cells[0].P.p.frames[ci];
       cells.forEach((c) => {
+        if (!c.cv.clientWidth) return; // hidden while another view is focused
         const i = nearest(c.P.p.frames, meta0);
         const vp = c.P.c.vp, cw = c.cv.clientWidth, ch = c.cv.clientHeight;
         const sc = same ? s : Math.min(cw / vp.w, ch / vp.h);
@@ -871,7 +882,7 @@ function client(): void {
 
 function compareSection(): string {
   return `<section id="compare"><h2>Side by side</h2>
-<p class="muted small">The same repo and commit under each arrangement, on one slider. Each box is square, so empty space in a box is screen space the layout leaves unused. "Uses N% of its square" = bounding-box area / (longer side)². "Files fill N% of the box" = live file cells / bounding-box area (the compactness metric for this one frame). Tick "same scale" to compare absolute size instead.</p>
+<p class="muted small">The same repo and commit under each arrangement, on one slider. Each box is square, so empty space in a box is screen space the layout leaves unused. "Uses N% of its square" = bounding-box area / (longer side)². "Files fill N% of the box" = live file cells / bounding-box area (the compactness metric for this one frame). Tick "same scale" to compare absolute size instead; ⤢ shows one view large (✕ all goes back).</p>
 <div class="pctl"><select id="cfx" aria-label="repo"></select><select id="cgr" aria-label="group"></select>
 <label><input type="checkbox" id="csame"> same scale</label><label><input type="checkbox" id="cmoved" checked> moved</label></div>
 <div class="pctl"><button id="cplay" aria-label="play">▶</button><input id="cslider" type="range" min="0" max="0" value="0" aria-label="frame" style="flex:1 1 160px;accent-color:var(--accent);min-height:32px">
@@ -1077,6 +1088,8 @@ button:hover{border-color:#4d6f92}
 .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .cgrid figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px;min-width:0}
 .cgrid figcaption{font-size:.8rem;margin-bottom:4px;overflow-wrap:anywhere}
+.cgrid.focused{grid-template-columns:1fr}.cgrid.focused figure:not(.focus){display:none}
+.cfocus{min-height:26px;padding:1px 8px;margin-right:6px;font-size:.8rem}
 .cgrid canvas{display:block;width:100%;border-radius:3px;background:${PALETTE.ground}}
 .pctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 .pctl select{background:#1a2938;color:var(--text);border:1px solid #2e4358;border-radius:5px;padding:5px;font:inherit;font-size:.9rem;min-height:32px;max-width:100%}

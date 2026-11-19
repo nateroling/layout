@@ -115,7 +115,7 @@ function esc(s: string): string {
  */
 export function wirePath(style: string, p: Rect, c: Rect): number[] | null {
   if (style === 'none') return null;
-  if (style === 'straight') return [p.x + p.w / 2, p.y + p.h / 2, c.x + c.w / 2, c.y + c.h / 2];
+  if (style === 'straight' || style === 'chain') return [p.x + p.w / 2, p.y + p.h / 2, c.x + c.w / 2, c.y + c.h / 2];
   const x1 = p.x + p.w / 2, y1 = p.y + p.h, x2 = c.x + c.w / 2, y2 = c.y;
   return [x1, y1, style === 'bus' ? y1 + Math.min(1, (y2 - y1) / 2) : (y1 + y2) / 2, x2, y2];
 }
@@ -202,7 +202,7 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
   for (const n of f.nodes) {
     if (n.kind === 'dir') {
       if (n.parent) {
-        const p = byId.get(n.parent);
+        const p = (n.link && byId.get(n.link)) || byId.get(n.parent);
         if (p) {
           const w = wirePath(f.wires ?? 'elbow', p, n);
           if (w) wires += `M${r2(w[0])} ${r2(w[1])}` + (w.length === 4 ? `L${r2(w[2])} ${r2(w[3])}` : `V${r2(w[2])}H${r2(w[3])}V${r2(w[4])}`);
