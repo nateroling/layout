@@ -1,0 +1,494 @@
+<title>ripgrep Metro City</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap">
+<style>
+/* Layout: the city fills the screen like an architect's massing model on a table; a slim
+   title card floats top-left and the commit timeline runs along the bottom edge. */
+:root {
+  --bg: #dfe3e6;        /* table surface */
+  --ground: #cfd5da;
+  --slab: #f3f4f2;      /* district plates, lightened per depth */
+  --slab-deep: #b9c1c8;
+  --ink: #1f2a33;
+  --muted: #5b6873;
+  --panel: rgba(250, 251, 250, 0.86);
+  --line: rgba(31, 42, 51, 0.14);
+  --accent: #e2582b;    /* files touched in the current commit */
+  --track: #b8c0c7;
+  --font-display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161c22; --ground: #1d252c; --slab: #3a4651; --slab-deep: #26313a;
+    --ink: #e6ebef; --muted: #98a5b0; --panel: rgba(24, 31, 38, 0.86); --line: rgba(230, 235, 239, 0.14);
+    --accent: #ff7a45; --track: #3b4752; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161c22; --ground: #1d252c; --slab: #3a4651; --slab-deep: #26313a;
+  --ink: #e6ebef; --muted: #98a5b0; --panel: rgba(24, 31, 38, 0.86); --line: rgba(230, 235, 239, 0.14);
+  --accent: #ff7a45; --track: #3b4752; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
+#scene { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.card {
+  position: fixed; z-index: 2;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: max(16px, env(safe-area-inset-left, 0px));
+  max-width: min(440px, calc(100% - 32px));
+  background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  display: grid; gap: 6px;
+}
+h1 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; text-wrap: balance; }
+h1 span { color: var(--muted); font-weight: 500; }
+.sub { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.commit { font-family: var(--font-mono); font-size: 12px; line-height: 1.45; min-width: 0; }
+.commit .meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+.commit .subj { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.bar {
+  position: fixed; z-index: 2; left: 0; right: 0;
+  bottom: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); padding-top: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to top, var(--bg) 40%, transparent);
+  display: grid; gap: 8px;
+}
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.row label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+button, select {
+  font: 500 12.5px var(--font-body); color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; cursor: pointer;
+}
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#play { min-width: 74px; }
+.count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+.tip {
+  position: fixed; z-index: 3; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; font: 12px var(--font-mono); color: var(--ink); max-width: 360px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.tip b { font-weight: 500; }
+.tip span { color: var(--muted); }
+.err { position: fixed; inset: auto 16px 50% 16px; text-align: center; color: var(--muted); }
+@media (max-width: 560px) {
+  .sub { display: none; }
+  .card { padding: 10px 12px; }
+}
+</style>
+
+<canvas id="scene" aria-label="3D code city of ripgrep"></canvas>
+
+<div class="card">
+  <h1>ripgrep <span>· metro city</span></h1>
+  <p class="sub">Every file is a building on its folder's district. Footprints come from the metro layout; height is file size. Drag to orbit, scroll to zoom, right-drag to pan.</p>
+  <div class="commit" aria-live="polite">
+    <span class="meta" id="meta"></span>
+    <span class="subj" id="subj"></span>
+  </div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div class="bar">
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Commit">
+  <div class="row">
+    <button id="play" type="button">Play</button>
+    <label for="speed">Speed
+      <select id="speed">
+        <option value="10">10 commits/s</option>
+        <option value="30" selected>30 commits/s</option>
+        <option value="100">100 commits/s</option>
+      </select>
+    </label>
+    <label for="hmode">Height
+      <select id="hmode">
+        <option value="linear">size (linear)</option>
+        <option value="sqrt" selected>√ size</option>
+        <option value="log">log size</option>
+      </select>
+    </label>
+    <label for="cmode">Colour
+      <select id="cmode">
+        <option value="folder" selected>folder or crate</option>
+        <option value="heat">recent changes</option>
+        <option value="age">file age</option>
+      </select>
+    </label>
+    <button id="reset" type="button">Reset view</button>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let DATA = /*DATA*/null;
+if (!DATA) {
+  try { DATA = await (await fetch('data.json')).json(); }
+  catch (e) { document.body.insertAdjacentHTML('beforeend', '<p class="err">Could not load the city data.</p>'); throw e; }
+}
+
+// ---------- data: replay per-commit deltas ----------
+const N = DATA.commits.length;
+const KEYS = DATA.keys; // 'd' | 'f' per key
+const STR = DATA.strings;
+const REC = 8; // key, x, y, w, h, pathIdx, size, modified
+const CK = 100; // checkpoint every CK commits
+const checkpoints = []; // Map<key, Int32Array-ish record> snapshots
+{
+  let state = new Map();
+  for (let i = 0; i < N; i++) {
+    const [upd, rem] = DATA.frames[i];
+    for (const k of rem) state.delete(k);
+    for (let j = 0; j < upd.length; j += REC) state.set(upd[j], upd.slice(j + 1, j + REC));
+    if (i % CK === 0) checkpoints.push(new Map(state));
+  }
+}
+function stateAt(n) {
+  const base = Math.floor(n / CK);
+  const state = new Map(checkpoints[base]);
+  for (let i = base * CK + 1; i <= n; i++) {
+    const [upd, rem] = DATA.frames[i];
+    for (const k of rem) state.delete(k);
+    for (let j = 0; j < upd.length; j += REC) state.set(upd[j], upd.slice(j + 1, j + REC));
+  }
+  return state;
+}
+const depthOf = (p) => (p === '' ? 0 : p.split('/').length);
+const topOf = (p) => { const i = p.indexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+
+// ---------- scene ----------
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 2000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+const bb = DATA.bbox;
+const cx = (bb.x0 + bb.x1) / 2, cz = (bb.y0 + bb.y1) / 2;
+const span = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0);
+function resetView() {
+  controls.target.set(cx, 0, cz);
+  camera.position.set(cx + span * 0.55, span * 0.75, cz + span * 0.85);
+  controls.update();
+}
+resetView();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a96a0, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+sun.position.set(cx - span * 0.4, span * 0.9, cz - span * 0.25);
+sun.target.position.set(cx, 0, cz);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -span * 0.8, right: span * 0.8, top: span * 0.8, bottom: -span * 0.8, near: 1, far: span * 3 });
+sun.shadow.bias = -0.0005;
+scene.add(sun, sun.target);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 8, span * 8), new THREE.MeshStandardMaterial({ roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.set(cx, -0.01, cz);
+ground.receiveShadow = true;
+scene.add(ground);
+
+const box = new THREE.BoxGeometry(1, 1, 1);
+box.translate(0, 0.5, 0); // origin at the base
+const dirKeys = [], fileKeys = [];
+const slot = new Int32Array(KEYS.length);
+for (let k = 0; k < KEYS.length; k++) slot[k] = (KEYS[k] === 'd' ? dirKeys : fileKeys).push(k) - 1;
+const mk = (n, rough) => {
+  const m = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({ roughness: rough, metalness: 0 }), n);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.castShadow = true; m.receiveShadow = true;
+  m.frustumCulled = false;
+  scene.add(m);
+  return m;
+};
+const plates = mk(dirKeys.length, 0.95);
+const towers = mk(fileKeys.length, 0.7);
+
+// ---------- theme ----------
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let theme = {};
+function readTheme() {
+  const dark = css('color-scheme') === 'dark' || getComputedStyle(document.documentElement).colorScheme === 'dark';
+  theme = {
+    dark,
+    bg: new THREE.Color(css('--bg')), ground: new THREE.Color(css('--ground')),
+    slab: new THREE.Color(css('--slab')), slabDeep: new THREE.Color(css('--slab-deep')),
+    accent: new THREE.Color(css('--accent')),
+  };
+  scene.background = theme.bg;
+  scene.fog = new THREE.Fog(theme.bg, span * 1.6, span * 4);
+  ground.material.color.copy(theme.ground);
+  repaint = true;
+}
+// Hues go to groups in the order they first appear, spaced by the golden angle, so a colour
+// never changes over the history. Rust crates are one group whether they sit at the top
+// level (grep/, globset/, ...) or under crates/ after the 2020 move.
+const groupOf = (p) => {
+  const t = topOf(p);
+  if (t !== 'crates') return t;
+  const rest = p.slice(7), i = rest.indexOf('/');
+  return i < 0 ? t : rest.slice(0, i);
+};
+const folderColor = new Map();
+const folderOf = (name) => folderColor.get(name) ?? -1;
+for (const [upd] of DATA.frames)
+  for (let j = 0; j < upd.length; j += 8)
+    if (DATA.keys[upd[j]] === 'f') {
+      const g = groupOf(DATA.strings[upd[j + 5]]);
+      if (!folderColor.has(g)) folderColor.set(g, g === '' ? -1 : Math.round((20 + 137.508 * folderColor.size) % 360));
+    }
+const tmpC = new THREE.Color();
+function towerColor(rec, commit) {
+  const path = STR[rec[4]], mod = rec[6];
+  const mode = cmode.value;
+  if (mod === commit && commit > 0) return tmpC.copy(theme.accent);
+  if (mode === 'folder') {
+    const hue = folderOf(groupOf(path));
+    if (hue < 0) return tmpC.setHSL(0, 0, theme.dark ? 0.78 : 0.62);
+    return tmpC.setHSL(hue / 360, theme.dark ? 0.42 : 0.38, theme.dark ? 0.62 : 0.6);
+  }
+  if (mode === 'heat') {
+    const t = Math.exp(-(commit - mod) / 60);
+    const base = tmpC.setHSL(0.58, 0.08, theme.dark ? 0.6 : 0.72);
+    return base.lerp(theme.accent, t);
+  }
+  // age: born order, old = deep blue, new = pale
+  const born = bornAt[rec.key] ?? 0;
+  const t = born / Math.max(1, N - 1);
+  return tmpC.setHSL(0.6 - 0.45 * t, 0.45, theme.dark ? 0.35 + 0.35 * t : 0.32 + 0.4 * t);
+}
+const bornAt = [];
+for (let i = 0; i < N; i++) {
+  const upd = DATA.frames[i][0];
+  for (let j = 0; j < upd.length; j += REC) if (bornAt[upd[j]] === undefined) bornAt[upd[j]] = i;
+}
+
+// ---------- heights ----------
+const SLAB = 0.14;
+const hmode = document.getElementById('hmode'), cmode = document.getElementById('cmode');
+const MAXS = Math.max(1, DATA.maxSize);
+function heightOf(size) {
+  const v = Math.max(0, size);
+  if (hmode.value === 'linear') return 0.08 + (v / MAXS) * span * 0.45;
+  if (hmode.value === 'sqrt') return 0.08 + Math.sqrt(v / MAXS) * span * 0.22;
+  return 0.08 + (Math.log10(v + 1) / Math.log10(MAXS + 1)) * span * 0.09;
+}
+
+// ---------- animated per-instance state ----------
+// For each key: from/to boxes [x, z, w, d, y0, h]; displayed = lerp(from, to, t).
+const K = KEYS.length;
+const from = new Float32Array(K * 6), to = new Float32Array(K * 6), shown = new Float32Array(K * 6);
+const alive = new Uint8Array(K); // currently targeted as present
+let tweenStart = 0, tweenDur = 1, current = -1, repaint = true, curState = new Map();
+const m4 = new THREE.Matrix4();
+
+function target(n) {
+  const state = stateAt(n);
+  from.set(shown);
+  alive.fill(0);
+  for (const [k, r] of state) {
+    r.key = k;
+    const p = STR[r[4]], isDir = KEYS[k] === 'd';
+    const x = r[0] / 10, z = r[1] / 10, w = r[2] / 10, d = r[3] / 10;
+    const y0 = isDir ? depthOf(p) * SLAB : depthOf(p) * SLAB;
+    const h = isDir ? SLAB : heightOf(r[5]);
+    const o = k * 6;
+    if (shown[o + 2] === 0) { // appearing: start flat at its spot
+      from[o] = x; from[o + 1] = z; from[o + 2] = w; from[o + 3] = d; from[o + 4] = y0; from[o + 5] = 0;
+    }
+    to[o] = x; to[o + 1] = z; to[o + 2] = w; to[o + 3] = d; to[o + 4] = y0; to[o + 5] = h;
+    alive[k] = 1;
+  }
+  for (let k = 0; k < K; k++) if (!alive[k]) { const o = k * 6; to.set(from.subarray(o, o + 6), o); to[o + 5] = 0; }
+  curState = state;
+  current = n;
+  tweenStart = performance.now();
+  repaint = true;
+  updateColors();
+  updateText();
+}
+
+function updateColors() {
+  for (let k = 0; k < K; k++) {
+    const r = curState.get(k);
+    if (!r) continue;
+    if (KEYS[k] === 'd') {
+      const dd = depthOf(STR[r[4]]);
+      tmpC.copy(theme.slabDeep).lerp(theme.slab, Math.min(1, dd / 3));
+      plates.setColorAt(slot[k], tmpC);
+    } else towers.setColorAt(slot[k], towerColor(r, current));
+  }
+  if (plates.instanceColor) plates.instanceColor.needsUpdate = true;
+  if (towers.instanceColor) towers.instanceColor.needsUpdate = true;
+}
+
+const ease = (t) => (t < 0 ? 0 : t > 1 ? 1 : 1 - Math.pow(1 - t, 3));
+function writeMatrices(now) {
+  const t = ease((now - tweenStart) / tweenDur);
+  for (let k = 0; k < K; k++) {
+    const o = k * 6;
+    for (let i = 0; i < 6; i++) shown[o + i] = from[o + i] + (to[o + i] - from[o + i]) * t;
+    const mesh = KEYS[k] === 'd' ? plates : towers;
+    const h = shown[o + 5];
+    if (h <= 1e-4) { m4.makeScale(0, 0, 0); if (t >= 1) shown[o + 2] = 0; }
+    else {
+      m4.makeScale(shown[o + 2], h, shown[o + 3]);
+      m4.setPosition(shown[o] + shown[o + 2] / 2, shown[o + 4], shown[o + 1] + shown[o + 3] / 2);
+    }
+    mesh.setMatrixAt(slot[k], m4);
+  }
+  plates.instanceMatrix.needsUpdate = true;
+  towers.instanceMatrix.needsUpdate = true;
+  return t >= 1;
+}
+
+// ---------- UI ----------
+const slider = document.getElementById('slider');
+slider.max = String(N - 1);
+const metaEl = document.getElementById('meta'), subjEl = document.getElementById('subj'), countEl = document.getElementById('count');
+const fmtDate = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+function updateText() {
+  const [time, sha, subj] = DATA.commits[current];
+  metaEl.textContent = `#${current} · ${fmtDate(time)} · ${sha}`;
+  subjEl.textContent = subj;
+  subjEl.title = subj;
+  let files = 0, dirs = 0;
+  for (const k of curState.keys()) KEYS[k] === 'd' ? dirs++ : files++;
+  countEl.textContent = `${files} files · ${dirs} folders`;
+  slider.value = String(current);
+}
+function legend() {
+  const tops = new Map();
+  for (const [k, r] of curState) if (KEYS[k] === 'f') { const t = groupOf(STR[r[4]]); tops.set(t, (tops.get(t) ?? 0) + 1); }
+  const el = document.getElementById('legend');
+  if (cmode.value !== 'folder') {
+    el.innerHTML = cmode.value === 'heat'
+      ? '<span><i style="background:var(--accent)"></i>changed recently, fades over ~60 commits</span>'
+      : '<span>dark blue = oldest files, pale = newest</span>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const [t, n] of [...tops].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+    const hue = folderOf(t);
+    const c = hue < 0 ? `hsl(0 0% ${theme.dark ? 78 : 62}%)` : `hsl(${hue} ${theme.dark ? 42 : 38}% ${theme.dark ? 62 : 60}%)`;
+    const s = document.createElement('span');
+    s.innerHTML = `<i style="background:${c}"></i>`;
+    s.append(t === '' ? '(root files)' : t);
+    el.append(s);
+  }
+  const s = document.createElement('span');
+  s.innerHTML = '<i style="background:var(--accent)"></i>changed in this commit';
+  el.append(s);
+}
+
+let playing = false, last = 0, acc = 0;
+const playBtn = document.getElementById('play'), speedSel = document.getElementById('speed');
+function go(n, dur) {
+  n = Math.max(0, Math.min(N - 1, n));
+  tweenDur = dur;
+  target(n);
+  if (!playing || n % 25 === 0) legend();
+}
+slider.addEventListener('input', () => { stop(); go(Number(slider.value), 280); });
+function stop() { playing = false; playBtn.textContent = 'Play'; legend(); }
+playBtn.addEventListener('click', () => {
+  if (playing) return stop();
+  if (current >= N - 1) go(0, 200);
+  playing = true; playBtn.textContent = 'Pause'; last = performance.now(); acc = 0;
+});
+hmode.addEventListener('change', () => { tweenDur = 400; target(current); });
+cmode.addEventListener('change', () => { updateColors(); legend(); repaint = true; });
+document.getElementById('reset').addEventListener('click', resetView);
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLSelectElement) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if (e.target === slider) return; // the slider handles its own arrows
+    stop(); go(current + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 25 : 1), 200);
+  } else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); playBtn.click(); }
+});
+
+// hover: name the building
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), tip = document.getElementById('tip');
+let hoverXY = null;
+canvas.addEventListener('pointermove', (e) => { hoverXY = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerleave', () => { hoverXY = null; tip.hidden = true; });
+const fmtSize = (b) => (b >= 1024 ? `${(b / 1024).toFixed(b >= 10240 ? 0 : 1)} KB` : `${b} B`);
+function hover() {
+  if (!hoverXY) return;
+  ptr.set((hoverXY[0] / innerWidth) * 2 - 1, -(hoverXY[1] / innerHeight) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(towers, false)[0];
+  if (!hit) { tip.hidden = true; return; }
+  const k = fileKeys[hit.instanceId], r = curState.get(k);
+  if (!r) { tip.hidden = true; return; }
+  tip.innerHTML = '';
+  const b = document.createElement('b'); b.textContent = STR[r[4]];
+  const s = document.createElement('span'); s.textContent = ` · ${fmtSize(r[5])} · last changed #${r[6]}`;
+  tip.append(b, s);
+  tip.hidden = false;
+  tip.style.left = Math.min(hoverXY[0] + 14, innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = (hoverXY[1] + 14) + 'px';
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  repaint = true;
+}
+addEventListener('resize', resize);
+controls.addEventListener('change', () => { repaint = true; });
+const reTheme = () => { readTheme(); updateColors(); legend(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', reTheme);
+new MutationObserver(reTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (playing) {
+    const rate = Number(speedSel.value);
+    acc += ((now - last) / 1000) * rate;
+    last = now;
+    if (acc >= 1) {
+      const stepN = Math.floor(acc);
+      acc -= stepN;
+      if (current + stepN >= N - 1) { go(N - 1, 300); stop(); }
+      else go(current + stepN, reduced ? 0 : Math.min(260, 900 / rate));
+    }
+  }
+  const moving = controls.update();
+  const done = writeMatrices(now);
+  if (repaint || !done || moving) {
+    renderer.render(scene, camera);
+    repaint = !done;
+  }
+  hover();
+}
+
+readTheme();
+resize();
+go(N - 1, 1); // open on HEAD, the whole city
+requestAnimationFrame(loop);
+</script>

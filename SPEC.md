@@ -39,6 +39,8 @@ git log --first-parent --raw  ──►  History (events per commit)  ──► 
 | `recompute` | stateless | Lay out from scratch every commit. `order=name, align=center` = classic fsn (instability baseline). `order=birth, align=left` = birth order: existing siblings never reorder, but widening bands still push neighbours. |
 | `hindsight` | uses future | One layout of the union of every path that ever existed; commit N just shows the live subset. Upper bound on stability, lower bound on compactness. |
 | `slack` | online, stateful | Per-directory reservations for cols, rows and band width. When the requirement exceeds a reservation, grow it (`growthMode`). Never shrinks; a vanished directory drops its reservation. |
+| `city` | online, stateful | Stretchable nested grid (its own arrangement; no `arrange` option). Each directory is a district on its own grid; cell 0 is its file lot, child directories take the earliest free cell in square-shell order and keep it. Column widths / row heights are ratchets (never shrink), so growth slides what lies beyond a seam outward and nothing is re-packed. Deleted files/dirs leave holes that new arrivals reuse. See `src/strategies/city.ts`. |
+| `metro` | online, stateful | `city` grown from the centre: the file lot is cell (0,0) and child directories take cells on a square spiral around it in all four directions; every other district is a `city` mirrored to face away from the centre (orientation from the cell it sits in; in its parent's lot column/row it inherits the parent's), with its lot in the corner facing the centre and files filling away from it. Children hug the side of their cell nearest the lot, so every push points away from the centre. The root lot is pinned at the origin. |
 | `tombstone` | online, stateful | Persistent per-directory slot lists in arrival order. Deleted files/dirs keep their slot as ghosts. `reuse` lets new files infill the earliest ghost slot (no movement). Local compaction of a directory when its ghost ratio exceeds `compactRatio` or a ghost outlives `ghostTtl`. Optional reservations as in `slack`. |
 
 ## Options
@@ -55,7 +57,20 @@ strategies` prints every strategy's options with type and default.
 
 **Geometry** (every strategy): `cell` > 0 (1), `pad` >= 0 (0.5), `hgap` >= 0 (1), `vgap` >= 0 (2),
 `align` left|center (left; recompute: center), `gridMode` sqrt|fixed (sqrt), `gridCols` integer >= 1 (8,
-used when `gridMode=fixed`). Zero gaps/pad are allowed: neighbouring platforms may touch, never overlap.
+used when `gridMode=fixed`), `arrange` treev|wrap|nested|radial|spiral (treev; see below). Zero gaps/pad are allowed:
+neighbouring platforms may touch, never overlap.
+
+**Arrangement** (`arrange`, `src/geometry/arrange.ts`): where the measured platforms go, independent of the
+strategy (which still decides order, ghosts, empty slots and platform cols/rows). `treev` = the band layout
+above. `wrap` = TreeV with each directory's children shelf-wrapped onto rows, the row break chosen so the
+subtree block is as square as possible. `nested` = Code City districts: a directory is a rectangle holding its
+file grid and its children's districts, shelf-packed near-square, no wires. `radial` = TreeV bands mapped to
+angles around the root, one ring per depth, each ring the smallest radius that keeps platforms' circumcircles
+apart (rounded up to a whole cell). `spiral` = recursive: a directory's children's blocks coil around its
+platform counter-clockwise in strips (bottom, right, top, left), a strip ending where the next block would pass
+the current box's side. Wires follow the coil (`wires=chain`): the first child links to its parent, each later
+child to the sibling before it (`LayoutNode.link`; the player carries it in the dirs' path field). Band-width reservations only affect `treev` and `radial`. A Frame carries
+`wires` (elbow|bus|straight|chain|none) so renderers draw the arrangement's connectors.
 
 | strategy | option | type | default | meaning |
 |---|---|---|---|---|
@@ -66,6 +81,7 @@ used when `gridMode=fixed`). Zero gaps/pad are allowed: neighbouring platforms m
 | slack | `slack` | number >= 0 | 0.25 | initial headroom: first reservation = `ceil(required * (1 + slack))` |
 | slack | `growth` | number >= 1 | 1.5 | factor when a reservation is exceeded |
 | slack | `growthMode` | multiply\|additive | multiply | band growth: `ceil(required * growth)`, or headroom only where growth originates (see `reserve.ts`) |
+| city, metro | `cell`, `pad`, `hgap` | geometry | as above | the only geometry keys city takes (`hgap` = gap between its columns and rows) |
 | tombstone | `reuse` | boolean | true | new files infill the earliest ghost slot; a returning directory revives in place |
 | tombstone | `compactRatio` | number 0..1 | 0.5 | compact a live directory whose ghost fraction exceeds this (1 = never) |
 | tombstone | `ghostTtl` | integer >= 0 | 0 | a ghost older than this many commits compacts its directory (0 = forever) |
@@ -90,6 +106,8 @@ used when `gridMode=fixed`). Zero gaps/pad are allowed: neighbouring platforms m
 - `bin/viz.ts`: one commit or a filmstrip (`--every K`) → JSON + SVG. `--at`: `HEAD` (default), `#N` =
   first-parent index N (0-based), anything else = a sha prefix of >= 4 hex chars on the first-parent
   timeline. A bare number is always a sha prefix, never an index. `--opt k=v` is validated as above.
+- `sweep-square.json`: 3 strategies × 5 arrangements, with a "side by side" section (`compare` groups: configs
+  on one shared slider). `node bin/sweep.ts --sweep sweep-square.json --out out/square`.
 - `bin/sweep.ts` + `sweep.json`: fixtures × configs → `out/report/index.html` (scoreboard, filmstrips at a
   consistent scale, scrubbable player) plus `metrics.json` / `metrics.csv`.
 

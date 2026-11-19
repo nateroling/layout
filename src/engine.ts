@@ -8,6 +8,7 @@
 // (usesFuture: false) never see the History; only hindsight strategies do.
 
 import { applyCommit, emptyTree } from './model/tree.ts';
+import { wireStyle, type WireStyle } from './geometry/arrange.ts';
 import { bbox } from './geometry/treev.ts';
 import type { Commit, Delta, Frame, History, LayoutNode, OptionSchema, OptionSpec, Options, TreeState } from './types.ts';
 
@@ -26,6 +27,8 @@ export interface Strategy<S = unknown> {
   init(ctx: StrategyContext): S;
   step(state: S, tree: TreeState, commit: Commit, delta: Delta, ctx: StrategyContext): void;
   frame(state: S, tree: TreeState, commit: Commit, ctx: StrategyContext): LayoutNode[];
+  /** Wire style of every frame, for strategies that do their own arrangement (else from `arrange`). */
+  wires?: WireStyle;
 }
 
 /** Options the Runner itself reads; valid for every strategy. */
@@ -183,7 +186,7 @@ export class Runner<S = unknown> {
         n.cid = e ? `f:${e.id}` : n.id;
       }
     }
-    return { commit: c.index, sha: c.sha, time: c.time, strategy: this.strategy.name, nodes, bbox: bbox(nodes) };
+    return { commit: c.index, sha: c.sha, time: c.time, strategy: this.strategy.name, nodes, bbox: bbox(nodes), wires: this.strategy.wires ?? wireStyle(this.ctx.options.arrange) };
   }
 
   /** Replay every commit in [0, to], calling onFrame for each index for which want(i) is true. */

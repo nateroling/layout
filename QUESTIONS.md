@@ -95,3 +95,43 @@
 - `compactRatio` is capped at 1 (1 = never compact); `ghostTtl` must be an integer.
 - Options are validated strictly: unknown keys and bad values are errors. Numbers may be given as plain decimal strings.
 - In `viz --at`, `#N` is an index; a bare string is always a sha prefix (4+ hex chars), never an index.
+
+## Arrangements (squarer layouts)
+
+- **wrap/nested squareness rule**: per directory, among the greedy shelf packings whose first row holds the
+  first k children (k = 1..n), take the one with the shortest longer side, then the smallest area. Each
+  subtree is squared locally, so the root is squarish but not optimal, and wrap can come out tall (aspect
+  ~0.5 on chalk). A target aspect option (e.g. 16:9 for screens) would be a one-line change.
+- **wrap/nested keep sibling order** (shelf packing in the strategy's order, no sorting by size). That keeps
+  order-based stability but wastes space under tall items; a squarified treemap would be denser and less stable.
+- **Band-width reservations are ignored by wrap and nested** (they are TreeV band semantics); platform
+  cols/rows reservations still apply. Radial uses band widths as angles, so root slack is an empty wedge.
+- **Radial is sparse by construction**: angle is proportional to TreeV band width, so two small adjacent
+  siblings need a ring circumference about as long as the whole TreeV width. Allocating angle per ring
+  (or by leaf count) would pack tighter at the cost of children no longer sitting in their parent's wedge.
+- **Wires for wrap** turn just below the parent ("bus"), so later rows' wires run behind the rows above.
+- **Spiral direction and start**: counter-clockwise, starting below the parent and running left to right, so a
+  single child hangs below like TreeV and chains stay vertical. Gaps: `vgap` between the box and a strip,
+  `hgap` between blocks in a strip. Wires follow the coil as a chain (parent -> first child -> next
+  sibling ...), straight centre to centre; a link between two big neighbouring blocks is long.
+
+## city (stretchable grid)
+
+- **Shell order** for child cells (around the file lot, down column s then back along row s) keeps districts about
+  square in cell count; actual widths come from the biggest block in each column, so one big child (vue-core's
+  `packages`) widens a whole column/row and leaves gaps beside its neighbours. Lower density is the price.
+- **Ratchets never shrink**, even after a big directory is deleted: the space stays as a hole until reused. A
+  periodic deliberate "re-plan" (one planned rearrangement) is not implemented.
+- **File lots** keep slots (holes reused, earliest first) but still reflow when their column count grows
+  (ceil(sqrt(slots))). A fixed lot width per directory would remove that.
+- **Child placement is top-left in its cell**, so it only moves when columns/rows before it widen.
+- **metro** spirals right, down, left, up from the lot (cell order (1,0), (1,1), (0,1), (-1,1), ...). The first
+  big child (vue-core's `packages`) lands at (1,1) and dominates one quadrant, so the lot is not visually centred
+  on big repos. Placing children by size (big ones further out) would centre better but breaks arrival order.
+
+## 3D ripgrep demo (bin/city3d.ts, src/render/city3d.html)
+- Height defaults to √size, with linear and log in a menu. Linear is literally "height = size", but ripgrep's
+  largest file (grep/src/data/sherlock.txt, 595 KB) is ~260× the median (~2 KB), so linear makes nearly every
+  building a flat tile. The scale is fixed over the whole history, so heights are comparable across commits.
+- Colour groups Rust crates the same before and after the 2020 move under crates/ (grep/ and crates/grep/ share
+  a colour). That rule is ripgrep-specific.

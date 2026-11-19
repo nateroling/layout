@@ -14,6 +14,16 @@ export interface ReportOptions {
   budgetBytes: number;
   generated: string; // ISO date
   command?: string;
+  title?: string; // replaces "layout stability report" in the heading and <title>
+  about?: string; // extra HTML paragraph(s) at the top of the about section
+  compare?: CompareGroup[]; // side-by-side groups: configs drawn next to each other on one slider
+  compareOnly?: boolean; // a small page: about + legend + side by side only (no tables, filmstrips, player)
+}
+
+/** Configs (by label) shown next to each other in the "side by side" section. */
+export interface CompareGroup {
+  label: string;
+  configs: string[];
 }
 
 export interface ReportResult {
@@ -54,10 +64,10 @@ function playerCost(c: ConfigResult, L: number): number {
   return p.data.length + p.kinds.length + p.dirPath.length * 4 + p.dirParent.length * 4 + p.frames.length * 4;
 }
 
-function plan(fixtures: FixtureResult[], budget: number): Plan {
+function plan(fixtures: FixtureResult[], budget: number, noFilm = false): Plan {
   const notes: string[] = [];
   const overhead = 200_000 + fixtures.reduce((s, f) => s + JSON.stringify(f.strings).length + JSON.stringify(f.metas).length, 0);
-  const filmOf = (f: FixtureResult) => f.configs.reduce((s, c) => s + c.film.bytes, 0);
+  const filmOf = (f: FixtureResult) => (noFilm ? 0 : f.configs.reduce((s, c) => s + c.film.bytes, 0));
   let film = fixtures.reduce((s, f) => s + filmOf(f), 0);
   const canvasFilm = new Set<string>();
   const filmBudget = budget * 0.35;
@@ -117,9 +127,9 @@ function moveTierText(t: number): string {
   return `${MOVE_TIERS[t - 1]}–${MOVE_TIERS[t]} cells`;
 }
 
-function intro(): string {
+function intro(about = ''): string {
   const items = COLUMNS.map((c) => `<dt>${esc(c.label)}${c.better ? ` <span class="dir">${c.better === 'low' ? 'lower is better' : 'higher is better'}</span>` : ''}</dt><dd>${esc(c.help)}</dd>`).join('');
-  return `<section id="about">
+  return `<section id="about">${about}
 <p>Each repo's file tree is drawn fsn-style from above: a directory is a <b>platform</b> with its files in a grid; subdirectories hang in the row below, joined by wires. A <b>layout strategy</b> decides where things go as the repo evolves commit by commit (first-parent history). This report replays every commit of each repo under each strategy and asks:</p>
 <ul>
 <li><b>Smoothness</b> (consecutive commits) — when you play the history as an animation, how much jumps around from one commit to the next? Measured on nodes that exist in both of two consecutive commits: how many moved, how far on average, how far at worst. Most commits only edit files, so the headline is <i>moved / tree change</i>, averaged over commits that add, delete or rename something.</li>
@@ -419,7 +429,7 @@ function client(): void {
       cache.set(k, v);
       return v;
     }
-    while (cache.size >= 3) cache.delete(cache.keys().next().value);
+    while (cache.size >= 8) cache.delete(cache.keys().next().value);
     const fx = D.fixtures[fi], c = fx.configs[ci];
     const p = c.player;
     const n = p.kinds.length;
@@ -481,11 +491,20 @@ function client(): void {
     g.lineWidth = Math.max(lw, 0.12);
     g.beginPath();
     for (let k = 0; k < st.n; k++) {
-      if (!st.live[k] || kinds[k] !== 'd' || par[k] < 0 || !st.live[par[k]]) continue;
-      const q = par[k];
+      if (!st.live[k] || kinds[k] !== 'd' || par[k] < 0) continue;
+      const q = F[7][k] > 0 && st.live[F[7][k] - 1] ? F[7][k] - 1 : par[k];
+      if (!st.live[q]) continue;
       if (!opts.ghosts && (F[4][k] & 1 || F[4][q] & 1)) continue;
-      const x1 = (F[0][q] + F[2][q] / 2) / 100, y1 = (F[1][q] + F[3][q]) / 100;
-      const x2 = (F[0][k] + F[2][k] / 2) / 100, y2 = F[1][k] / 100, ym = (y1 + y2) / 2;
+      const ws = P.p.wires || 'elbow';
+      if (ws === 'none') continue;
+      const px = F[0][q] / 100, py = F[1][q] / 100, pw = F[2][q] / 100, ph = F[3][q] / 100;
+      const cx = F[0][k] / 100, cy = F[1][k] / 100, cw = F[2][k] / 100, chh = F[3][k] / 100;
+      if (ws === 'straight' || ws === 'chain') {
+        g.moveTo(px + pw / 2, py + ph / 2); g.lineTo(cx + cw / 2, cy + chh / 2);
+        continue;
+      }
+      const x1 = px + pw / 2, y1 = py + ph, x2 = cx + cw / 2, y2 = cy;
+      const ym = ws === 'bus' ? y1 + Math.min(1, (y2 - y1) / 2) : (y1 + y2) / 2;
       g.moveTo(x1, y1); g.lineTo(x1, ym); g.lineTo(x2, ym); g.lineTo(x2, y2);
     }
     g.stroke();
@@ -584,6 +603,119 @@ function client(): void {
       drawFilmStrip(e.target);
     }), { rootMargin: '400px' });
     strips.forEach((s) => io.observe(s));
+  }
+
+  // ---- side by side ----
+  // One slider drives several configs of the same repo. Every player of a repo samples the same
+  // frame-meta indices, so frame i is the same commit in each (the nearest one if a config was
+  // stored at reduced resolution).
+  function compare() {
+    const box = $('#compare');
+    if (!box || !D.compare || !D.compare.length) return;
+    const cfx = $('#cfx'), cgr = $('#cgr'), cs = $('#cslider'), grid = $('#cgrid'), cinfo = $('#cinfo');
+    let cells: any[] = [], ctimer: any = 0, ci = 0;
+    D.fixtures.forEach((f: any, i: number) => cfx.add(new Option(f.name, String(i))));
+    D.compare.forEach((g: any, i: number) => cgr.add(new Option(g.label, String(i))));
+    const nearest = (frames: number[], meta: number) => {
+      let j = 0;
+      frames.forEach((m: number, i: number) => { if (Math.abs(m - meta) < Math.abs(frames[j] - meta)) j = i; });
+      return j;
+    };
+    function build() {
+      const fi = +cfx.value, f = D.fixtures[fi], g = D.compare[+cgr.value];
+      grid.innerHTML = '';
+      cells = [];
+      g.configs.forEach((label: string) => {
+        const k = f.configs.findIndex((c: any) => c.label === label);
+        if (k < 0) return;
+        const fig = document.createElement('figure');
+        fig.innerHTML = '<figcaption><button class="cfocus" title="focus this view">⤢</button><b></b> <span class="muted"></span></figcaption><canvas></canvas>';
+        grid.appendChild(fig);
+        (fig.querySelector('b') as any).textContent = label;
+        (fig.querySelector('button') as any).addEventListener('click', () => {
+          const on = !grid.classList.contains('focused') || !fig.classList.contains('focus');
+          grid.classList.toggle('focused', on);
+          grid.querySelectorAll('figure').forEach((x: any) => x.classList.toggle('focus', on && x === fig));
+          grid.querySelectorAll('button.cfocus').forEach((b: any) => { b.textContent = on && b.closest('figure') === fig ? '✕ all' : '⤢'; });
+          draw4();
+          if (on) fig.scrollIntoView({ block: 'nearest' });
+        });
+        cells.push({ P: player(fi, k), cv: fig.querySelector('canvas'), cap: fig.querySelector('span') });
+      });
+      if (!cells.length) return;
+      cs.max = String(cells[0].P.p.frames.length - 1);
+      ci = +cs.max;
+      cs.value = String(ci);
+      draw4();
+    }
+    // bbox of everything drawn, and the area of live file cells (a file box is 0.8 of its cell)
+    function frameBox(st: any, kinds: string) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, cells = 0;
+      const F = st.f;
+      for (let k = 0; k < st.n; k++) {
+        if (!st.live[k]) continue;
+        x0 = Math.min(x0, F[0][k]); y0 = Math.min(y0, F[1][k]);
+        x1 = Math.max(x1, F[0][k] + F[2][k]); y1 = Math.max(y1, F[1][k] + F[3][k]);
+        if (kinds[k] === 'f' && !(F[4][k] & 1)) cells += (F[2][k] / 80) * (F[3][k] / 80);
+      }
+      return x1 > x0 ? { w: (x1 - x0) / 100, h: (y1 - y0) / 100, cells: cells } : { w: 0, h: 0, cells: 0 };
+    }
+    function draw4() {
+      if (!cells.length) return;
+      const same = $('#csame').checked;
+      const focused = grid.classList.contains('focused');
+      cells.forEach((c) => {
+        const w = c.cv.parentElement.clientWidth;
+        c.cv.style.height = Math.round(focused ? Math.min(w, window.innerHeight * 0.8) : w) + 'px';
+      });
+      // shared scale: the smallest fit scale, so the biggest layout fills its square
+      let s = Infinity;
+      if (same) cells.forEach((c) => { if (c.cv.clientWidth) s = Math.min(s, c.cv.clientWidth / c.P.c.vp.w, c.cv.clientHeight / c.P.c.vp.h); });
+      const meta0 = cells[0].P.p.frames[ci];
+      cells.forEach((c) => {
+        if (!c.cv.clientWidth) return; // hidden while another view is focused
+        const i = nearest(c.P.p.frames, meta0);
+        const vp = c.P.c.vp, cw = c.cv.clientWidth, ch = c.cv.clientHeight;
+        const sc = same ? s : Math.min(cw / vp.w, ch / vp.h);
+        const view = { s: sc, x: vp.x - (cw / sc - vp.w) / 2, y: vp.y - (ch / sc - vp.h) / 2 };
+        const r = draw(c.cv, c.P, i, view, { moved: $('#cmoved').checked, ghosts: true });
+        const b = frameBox(r.S.st, c.P.p.kinds);
+        const side = Math.max(b.w, b.h);
+        c.cap.textContent = Math.round(b.w) + ' × ' + Math.round(b.h) + ' · aspect ' + (b.h ? (b.w / b.h).toFixed(2) : '–') + ' · uses ' + (side ? Math.round((100 * b.w * b.h) / (side * side)) : 0) + '% of its square · files fill ' + (b.w * b.h ? ((100 * b.cells) / (b.w * b.h)).toFixed(1) : 0) + '% of the box';
+      });
+      const m = cells[0].P.fx.metas[meta0];
+      cinfo.textContent = '#' + m[0] + ' of ' + (cells[0].P.fx.used - 1) + ' · ' + new Date(m[1] * 1000).toISOString().slice(0, 10) + ' · ' + m[3];
+    }
+    function cstop() {
+      if (ctimer) clearInterval(ctimer);
+      ctimer = 0;
+      $('#cplay').textContent = '▶';
+    }
+    $('#cplay').addEventListener('click', () => {
+      if (ctimer) return cstop();
+      if (ci >= +cs.max) ci = 0;
+      $('#cplay').textContent = '❚❚';
+      ctimer = setInterval(() => {
+        if (ci >= +cs.max) return cstop();
+        ci++;
+        cs.value = String(ci);
+        draw4();
+      }, 1000 / +$('#cfps').value);
+    });
+    cs.addEventListener('input', () => { ci = +cs.value; draw4(); });
+    cfx.addEventListener('change', () => { cstop(); build(); });
+    cgr.addEventListener('change', () => { cstop(); build(); });
+    $('#csame').addEventListener('change', draw4);
+    $('#cmoved').addEventListener('change', draw4);
+    window.addEventListener('resize', draw4);
+    build();
+  }
+
+  if (!$('#pc')) {
+    // compare-only page: no main player, filmstrips or self-check
+    compare();
+    report('ready');
+    return;
   }
 
   // ---- player ----
@@ -722,6 +854,7 @@ function client(): void {
     load(0, 0);
     report('player ready · self-check pending');
     drawFilmCanvases();
+    compare();
     // self-check: decode every frame of every player once (no caching, so memory stays flat),
     // and compare the decoded geometry of a few frames with checksums taken from the source
     // frames at build time.
@@ -747,13 +880,25 @@ function client(): void {
   } else report('no data');
 }
 
+function compareSection(): string {
+  return `<section id="compare"><h2>Side by side</h2>
+<p class="muted small">The same repo and commit under each arrangement, on one slider. Each box is square, so empty space in a box is screen space the layout leaves unused. "Uses N% of its square" = bounding-box area / (longer side)². "Files fill N% of the box" = live file cells / bounding-box area (the compactness metric for this one frame). Tick "same scale" to compare absolute size instead; ⤢ shows one view large (✕ all goes back).</p>
+<div class="pctl"><select id="cfx" aria-label="repo"></select><select id="cgr" aria-label="group"></select>
+<label><input type="checkbox" id="csame"> same scale</label><label><input type="checkbox" id="cmoved" checked> moved</label></div>
+<div class="pctl"><button id="cplay" aria-label="play">▶</button><input id="cslider" type="range" min="0" max="0" value="0" aria-label="frame" style="flex:1 1 160px;accent-color:var(--accent);min-height:32px">
+<select id="cfps" aria-label="speed"><option value="3">3 fps</option><option value="8" selected>8 fps</option><option value="20">20 fps</option></select></div>
+<p id="cinfo" class="pinfo"></p>
+<div id="cgrid" class="cgrid"></div>
+</section>`;
+}
+
 // ---------- assembly ----------
 
 /** Frames per player whose decoded geometry the self-check compares with build-time checksums. */
 const CHECK_FRAMES = 5;
 
 export function buildReport(fixtures: FixtureResult[], o: ReportOptions): ReportResult {
-  const p = plan(fixtures, o.budgetBytes);
+  const p = plan(fixtures, o.budgetBytes, o.compareOnly);
   const levels: Record<string, number> = {};
   const data = {
     colours: FILE_COLOURS,
@@ -762,6 +907,7 @@ export function buildReport(fixtures: FixtureResult[], o: ReportOptions): Report
     moveTiers: MOVE_TIERS,
     moveColours: MOVE_COLOURS,
     moveWidths: MOVE_WIDTHS,
+    compare: o.compare ?? [],
     fixtures: fixtures.map((f) => ({
       name: f.name,
       used: f.used,
@@ -776,7 +922,7 @@ export function buildReport(fixtures: FixtureResult[], o: ReportOptions): Report
           strategy: c.strategy,
           vp: c.playerViewport,
           filmVp: c.film.viewport,
-          player: { frames: pl.frames, kinds: pl.kinds, dirPath: pl.dirPath, dirParent: pl.dirParent, data: pl.data },
+          player: { frames: pl.frames, kinds: pl.kinds, dirPath: pl.dirPath, dirParent: pl.dirParent, data: pl.data, wires: pl.wires },
           check: pl.sums ? evenly(pl.frames.length, CHECK_FRAMES).map((i) => [i, pl.sums[i]]) : [],
         };
       }),
@@ -808,17 +954,45 @@ ${filmstrips(f, i, p.canvasFilm.has(f.name))}
 </section>`;
   }).join('\n');
 
+  if (o.compareOnly) {
+    const title = o.title ?? 'side by side';
+    const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-layout · ${esc(title)}</title>
+<style>${CSS}</style></head>
+<body>
+<header><h1>git-layout <span>${esc(title)}</span></h1>
+<p class="muted small">Generated ${esc(o.generated)} · ${fixtures.length} repos · <span id="selfcheck">player not initialised (JavaScript off?)</span></p></header>
+<main>
+<section id="about">${o.about ?? ''}${legend()}</section>
+${compareSection()}
+${p.notes.length ? `<section><h2>Notes</h2><ul class="small">${p.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>` : ''}
+</main>
+<footer class="muted small">${o.command ? `<code>${esc(o.command)}</code><br>` : ''}All data inline; no network requests.</footer>
+<script type="application/json" id="data">${json}</script>
+<script>
+const RECENCY_BUCKETS = ${RECENCY_BUCKETS};
+${recencyBucket.toString()}
+${decoderSource()}
+(${client.toString()})();
+</script>
+</body></html>`;
+    return { html, notes: p.notes, bytes: { total: Buffer.byteLength(html), film: 0, player: json.length }, levels };
+  }
+
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>git-layout · layout stability report</title>
+<title>git-layout · ${esc(o.title ?? 'layout stability report')}</title>
 <style>${CSS}</style></head>
 <body>
-<header><h1>git-layout <span>layout stability report</span></h1>
+<header><h1>git-layout <span>${esc(o.title ?? 'layout stability report')}</span></h1>
 <p class="muted small">Generated ${esc(o.generated)} · ${fixtures.length} repos · ${new Set(fixtures.flatMap((f) => f.configs.map((c) => c.label))).size} configs · <span id="selfcheck">player not initialised (JavaScript off?)</span></p>
-<nav><a href="#about">about</a><a href="#summary">summary</a><a href="#player">player</a>${nav}</nav></header>
+<nav><a href="#about">about</a>${o.compare?.length ? '<a href="#compare">side by side</a>' : ''}<a href="#summary">summary</a><a href="#player">player</a>${nav}</nav></header>
 <main>
-${intro()}
+${intro(o.about)}
+${o.compare?.length ? compareSection() : ''}
 <section id="summary"><h2>Across repos</h2>${summarySection(fixtures)}</section>
 <section id="player"><h2>Player</h2>
 <div class="pctl"><select id="pfx" aria-label="repo"></select><select id="pcf" aria-label="config"></select></div>
@@ -910,7 +1084,13 @@ button:hover{border-color:#4d6f92}
 .strip svg,.strip canvas{display:block;border-radius:3px;background:${PALETTE.ground};max-width:none}
 .strip figcaption{font-size:.7rem;line-height:1.3;color:var(--muted);margin-top:2px}
 .mv{color:var(--accent)}
-#player{scroll-margin-top:40px}
+#player,#compare{scroll-margin-top:40px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.cgrid figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px;min-width:0}
+.cgrid figcaption{font-size:.8rem;margin-bottom:4px;overflow-wrap:anywhere}
+.cgrid.focused{grid-template-columns:1fr}.cgrid.focused figure:not(.focus){display:none}
+.cfocus{min-height:26px;padding:1px 8px;margin-right:6px;font-size:.8rem}
+.cgrid canvas{display:block;width:100%;border-radius:3px;background:${PALETTE.ground}}
 .pctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 .pctl select{background:#1a2938;color:var(--text);border:1px solid #2e4358;border-radius:5px;padding:5px;font:inherit;font-size:.9rem;min-height:32px;max-width:100%}
 #pslider{flex:1 1 160px;accent-color:var(--accent);min-height:32px}

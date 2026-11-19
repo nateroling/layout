@@ -69,6 +69,7 @@ export interface LayoutNode {
   w: number;
   h: number;
   ghost?: boolean; // tombstoned: no longer exists but keeps its slot
+  link?: string; // dirs: draw this node's wire from here instead of from its parent (spiral: previous sibling)
   cid?: string; // set by the Runner on live nodes: identity under rename-following (use for metrics)
   size?: number; // files only
   born?: number; // files only
@@ -82,6 +83,7 @@ export interface Frame {
   strategy: string;
   nodes: LayoutNode[];
   bbox: { x: number; y: number; w: number; h: number };
+  wires?: 'elbow' | 'bus' | 'straight' | 'chain' | 'none'; // how to draw parent -> child wires (default elbow)
 }
 
 export type Options = Record<string, string | number | boolean>;
