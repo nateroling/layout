@@ -17,6 +17,7 @@ export interface ReportOptions {
   title?: string; // replaces "layout stability report" in the heading and <title>
   about?: string; // extra HTML paragraph(s) at the top of the about section
   compare?: CompareGroup[]; // side-by-side groups: configs drawn next to each other on one slider
+  compareOnly?: boolean; // a small page: about + legend + side by side only (no tables, filmstrips, player)
 }
 
 /** Configs (by label) shown next to each other in the "side by side" section. */
@@ -63,10 +64,10 @@ function playerCost(c: ConfigResult, L: number): number {
   return p.data.length + p.kinds.length + p.dirPath.length * 4 + p.dirParent.length * 4 + p.frames.length * 4;
 }
 
-function plan(fixtures: FixtureResult[], budget: number): Plan {
+function plan(fixtures: FixtureResult[], budget: number, noFilm = false): Plan {
   const notes: string[] = [];
   const overhead = 200_000 + fixtures.reduce((s, f) => s + JSON.stringify(f.strings).length + JSON.stringify(f.metas).length, 0);
-  const filmOf = (f: FixtureResult) => f.configs.reduce((s, c) => s + c.film.bytes, 0);
+  const filmOf = (f: FixtureResult) => (noFilm ? 0 : f.configs.reduce((s, c) => s + c.film.bytes, 0));
   let film = fixtures.reduce((s, f) => s + filmOf(f), 0);
   const canvasFilm = new Set<string>();
   const filmBudget = budget * 0.35;
@@ -699,6 +700,13 @@ function client(): void {
     build();
   }
 
+  if (!$('#pc')) {
+    // compare-only page: no main player, filmstrips or self-check
+    compare();
+    report('ready');
+    return;
+  }
+
   // ---- player ----
   const cv = $('#pc'), fxSel = $('#pfx'), cfSel = $('#pcf'), slider = $('#pslider'), info = $('#pinfo'), info2 = $('#pinfo2');
   let P: any = null, idx = 0, view: any = null, timer: any = 0, last: any = null;
@@ -879,7 +887,7 @@ function compareSection(): string {
 const CHECK_FRAMES = 5;
 
 export function buildReport(fixtures: FixtureResult[], o: ReportOptions): ReportResult {
-  const p = plan(fixtures, o.budgetBytes);
+  const p = plan(fixtures, o.budgetBytes, o.compareOnly);
   const levels: Record<string, number> = {};
   const data = {
     colours: FILE_COLOURS,
@@ -934,6 +942,33 @@ ${scatter(f)}
 ${filmstrips(f, i, p.canvasFilm.has(f.name))}
 </section>`;
   }).join('\n');
+
+  if (o.compareOnly) {
+    const title = o.title ?? 'side by side';
+    const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-layout · ${esc(title)}</title>
+<style>${CSS}</style></head>
+<body>
+<header><h1>git-layout <span>${esc(title)}</span></h1>
+<p class="muted small">Generated ${esc(o.generated)} · ${fixtures.length} repos · <span id="selfcheck">player not initialised (JavaScript off?)</span></p></header>
+<main>
+<section id="about">${o.about ?? ''}${legend()}</section>
+${compareSection()}
+${p.notes.length ? `<section><h2>Notes</h2><ul class="small">${p.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>` : ''}
+</main>
+<footer class="muted small">${o.command ? `<code>${esc(o.command)}</code><br>` : ''}All data inline; no network requests.</footer>
+<script type="application/json" id="data">${json}</script>
+<script>
+const RECENCY_BUCKETS = ${RECENCY_BUCKETS};
+${recencyBucket.toString()}
+${decoderSource()}
+(${client.toString()})();
+</script>
+</body></html>`;
+    return { html, notes: p.notes, bytes: { total: Buffer.byteLength(html), film: 0, player: json.length }, levels };
+  }
 
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

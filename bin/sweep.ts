@@ -53,6 +53,7 @@ interface SweepFile {
   title?: string;
   about?: string;
   compare?: CompareGroup[];
+  compareOnly?: boolean;
 }
 
 const sweep = JSON.parse(readFileSync(values.sweep!, 'utf8')) as SweepFile;
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
   if (!results.length) throw new Error('no fixture produced results');
 
   const command = `node bin/sweep.ts ${process.argv.slice(2).join(' ')}`.trim();
-  const rep = buildReport(results, { budgetBytes: (sweep.budgetMB ?? 15) * 1e6, generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC', command, title: sweep.title, about: sweep.about, compare: sweep.compare });
+  const rep = buildReport(results, { budgetBytes: (sweep.budgetMB ?? 15) * 1e6, generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC', command, title: sweep.title, about: sweep.about, compare: sweep.compare, compareOnly: sweep.compareOnly });
   writeFileSync(join(outDir, 'index.html'), rep.html);
   writeFileSync(join(outDir, 'metrics.json'), JSON.stringify(metricsJson(results, rep.levels), null, 1));
   writeFileSync(join(outDir, 'metrics.csv'), metricsCsv(results));
