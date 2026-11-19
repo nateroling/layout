@@ -95,3 +95,18 @@
 - `compactRatio` is capped at 1 (1 = never compact); `ghostTtl` must be an integer.
 - Options are validated strictly: unknown keys and bad values are errors. Numbers may be given as plain decimal strings.
 - In `viz --at`, `#N` is an index; a bare string is always a sha prefix (4+ hex chars), never an index.
+
+## Arrangements (squarer layouts)
+
+- **wrap/nested squareness rule**: per directory, among the greedy shelf packings whose first row holds the
+  first k children (k = 1..n), take the one with the shortest longer side, then the smallest area. Each
+  subtree is squared locally, so the root is squarish but not optimal, and wrap can come out tall (aspect
+  ~0.5 on chalk). A target aspect option (e.g. 16:9 for screens) would be a one-line change.
+- **wrap/nested keep sibling order** (shelf packing in the strategy's order, no sorting by size). That keeps
+  order-based stability but wastes space under tall items; a squarified treemap would be denser and less stable.
+- **Band-width reservations are ignored by wrap and nested** (they are TreeV band semantics); platform
+  cols/rows reservations still apply. Radial uses band widths as angles, so root slack is an empty wedge.
+- **Radial is sparse by construction**: angle is proportional to TreeV band width, so two small adjacent
+  siblings need a ring circumference about as long as the whole TreeV width. Allocating angle per ring
+  (or by leaf count) would pack tighter at the cost of children no longer sitting in their parent's wedge.
+- **Wires for wrap** turn just below the parent ("bus"), so later rows' wires run behind the rows above.

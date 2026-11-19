@@ -5,6 +5,9 @@
 //   - no two file boxes overlap (live or ghost); no two platforms overlap (touching is fine)
 //   - every file lies inside its platform; every directory lies below its parent platform
 //   - nothing live under a ghost directory; all coordinates finite; bbox covers all nodes
+// Per arrangement (Frame.wires): treev/wrap put every directory below its parent platform;
+// nested puts it inside its parent district instead, so platforms overlap only by nesting: there
+// the check is that a district's own files and child districts do not overlap each other.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,8 +56,19 @@ export function geometryErrors(f: Frame): string[] {
   const dirs = f.nodes.filter((n) => n.kind === 'dir');
   const fo = findOverlap(files);
   if (fo) errs.push(`file overlap ${show(fo[0])} / ${show(fo[1])}`);
-  const po = findOverlap(dirs);
-  if (po) errs.push(`platform overlap ${show(po[0])} / ${show(po[1])}`);
+  const nested = f.wires === 'none';
+  const below = !f.wires || f.wires === 'elbow' || f.wires === 'bus';
+  if (!nested) {
+    const po = findOverlap(dirs);
+    if (po) errs.push(`platform overlap ${show(po[0])} / ${show(po[1])}`);
+  } else {
+    const kids = new Map<string, LayoutNode[]>();
+    for (const n of f.nodes) if (n.parent !== null) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)!).push(n);
+    for (const k of kids.values()) {
+      const po = findOverlap(k);
+      if (po) errs.push(`district overlap ${show(po[0])} / ${show(po[1])}`);
+    }
+  }
   for (const n of f.nodes) {
     if (n.parent === null) {
       if (n.kind !== 'dir' || n.path !== '') errs.push(`orphan ${show(n)}`);
@@ -69,7 +83,10 @@ export function geometryErrors(f: Frame): string[] {
     if (n.kind === 'file') {
       if (n.x < p.x - E || n.y < p.y - E || n.x + n.w > p.x + p.w + E || n.y + n.h > p.y + p.h + E)
         errs.push(`file ${show(n)} outside platform ${show(p)}`);
-    } else if (n.y < p.y + p.h - E) errs.push(`dir ${show(n)} not below parent ${show(p)}`);
+    } else if (nested) {
+      if (n.x < p.x - E || n.y < p.y - E || n.x + n.w > p.x + p.w + E || n.y + n.h > p.y + p.h + E)
+        errs.push(`district ${show(n)} outside parent ${show(p)}`);
+    } else if (below && n.y < p.y + p.h - E) errs.push(`dir ${show(n)} not below parent ${show(p)}`);
   }
   const b = bbox(f.nodes);
   assert.deepEqual(f.bbox, b, 'frame bbox');
@@ -164,6 +181,9 @@ const geo: Options[] = [
   { cell: 0.5, pad: 0, vgap: 0, hgap: 0.25, gridMode: 'fixed', gridCols: 3, align: 'center' },
   { cell: 2.5, pad: 0.1, hgap: 0.3, vgap: 0.1 },
 ];
+// Every arrangement, crossed with a subset of the geometry stressors (all of them would ×4 the run).
+const arranges: Options[] = [{}, { arrange: 'wrap' }, { arrange: 'nested' }, { arrange: 'radial' }];
+const geoFor = (a: Options): Options[] => (Object.keys(a).length ? [geo[0], geo[2], geo[3]] : geo);
 const own: Record<string, Options[]> = {
   recompute: [{ order: 'name' }, { order: 'birth', followRenames: false }],
   hindsight: [{ showGhosts: true }, { showGhosts: true, order: 'name', followRenames: false }, { showGhosts: false }],
@@ -192,7 +212,7 @@ test('geometry invariants: random histories × every strategy × aggressive opti
   let frames = 0;
   for (const name of Object.keys(strategies))
     for (const o of own[name] ?? [{}])
-      for (const g of geo) for (const h of hs) frames += checkGeometry(h, name, { ...o, ...g });
+      for (const a of arranges) for (const g of geoFor(a)) for (const h of hs) frames += checkGeometry(h, name, { ...o, ...g, ...a });
   assert.ok(frames > 10_000, `checked ${frames} frames`);
 });
 
@@ -231,6 +251,7 @@ for (const f of fixtures.filter((x) => x.kind === 'synthetic')) {
     const last = h.commits.length - 1;
     const stride = Math.max(1, Math.floor(h.commits.length / 25));
     for (const name of Object.keys(strategies))
-      for (const o of fixtureOpts[name] ?? [{}]) checkGeometry(h, name, o, (i) => i % stride === 0 || i === last);
+      for (const o of fixtureOpts[name] ?? [{}])
+        for (const a of arranges) checkGeometry(h, name, { ...o, ...a }, (i) => i % stride === 0 || i === last);
   });
 }

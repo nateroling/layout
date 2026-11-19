@@ -82,6 +82,7 @@ export interface Frame {
   strategy: string;
   nodes: LayoutNode[];
   bbox: { x: number; y: number; w: number; h: number };
+  wires?: 'elbow' | 'bus' | 'straight' | 'none'; // how to draw parent -> child wires (default elbow)
 }
 
 export type Options = Record<string, string | number | boolean>;

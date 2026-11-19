@@ -9,6 +9,7 @@
 // (order, ghosts, empty slots) and in the hooks that reserve extra room.
 
 import type { LayoutNode, OptionSchema } from '../types.ts';
+import { ARRANGES, placeNested, placeRadial, placeWrap, type Arrange } from './arrange.ts';
 
 export interface LFile {
   id: string;
@@ -35,9 +36,10 @@ export interface GeoOptions {
   align: 'left' | 'center';
   gridMode: 'sqrt' | 'fixed';
   gridCols: number;
+  arrange: Arrange;
 }
 
-export const defaultGeo: GeoOptions = { cell: 1, pad: 0.5, hgap: 1, vgap: 2, align: 'left', gridMode: 'sqrt', gridCols: 8 };
+export const defaultGeo: GeoOptions = { cell: 1, pad: 0.5, hgap: 1, vgap: 2, align: 'left', gridMode: 'sqrt', gridCols: 8, arrange: 'treev' };
 
 /**
  * Option schema of the shared geometry, accepted by every strategy. `over` changes a default
@@ -53,6 +55,7 @@ export function geoSchema(over: Partial<GeoOptions> = {}): OptionSchema {
     align: { type: 'enum', values: ['left', 'center'], default: d.align, doc: 'platform/children position inside a band' },
     gridMode: { type: 'enum', values: ['sqrt', 'fixed'], default: d.gridMode, doc: 'sqrt: ~square grids; fixed: gridCols columns' },
     gridCols: { type: 'number', default: d.gridCols, min: 1, integer: true, doc: 'columns when gridMode=fixed' },
+    arrange: { type: 'enum', values: [...ARRANGES], default: d.arrange, doc: 'where platforms go: treev rows, wrap (multi-row), nested districts, radial rings (see arrange.ts)' },
   };
 }
 
@@ -96,7 +99,21 @@ export function measure(root: LDir, g: GeoOptions, hooks: GeoHooks = {}): Map<st
   return out;
 }
 
+/** Platforms and files of the LDir tree, arranged per `g.arrange` (platform sizes come from `m`). */
 export function place(root: LDir, g: GeoOptions, m: Map<string, Measured>): LayoutNode[] {
+  switch (g.arrange) {
+    case 'wrap':
+      return placeWrap(root, g, m);
+    case 'nested':
+      return placeNested(root, g, m);
+    case 'radial':
+      return placeRadial(root, g, m);
+    default:
+      return placeTreev(root, g, m);
+  }
+}
+
+function placeTreev(root: LDir, g: GeoOptions, m: Map<string, Measured>): LayoutNode[] {
   const nodes: LayoutNode[] = [];
   const box = g.cell * 0.8;
   const inset = (g.cell - box) / 2;
@@ -155,6 +172,7 @@ export function geoFromOptions(o: Record<string, unknown>, base: GeoOptions = de
     align: o.align === 'center' ? 'center' : o.align === 'left' ? 'left' : base.align,
     gridMode: o.gridMode === 'fixed' ? 'fixed' : o.gridMode === 'sqrt' ? 'sqrt' : base.gridMode,
     gridCols: num(o.gridCols, base.gridCols),
+    arrange: (ARRANGES as string[]).includes(o.arrange as string) ? (o.arrange as Arrange) : base.arrange,
   };
 }
 

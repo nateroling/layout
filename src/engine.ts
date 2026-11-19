@@ -8,6 +8,7 @@
 // (usesFuture: false) never see the History; only hindsight strategies do.
 
 import { applyCommit, emptyTree } from './model/tree.ts';
+import { wireStyle } from './geometry/arrange.ts';
 import { bbox } from './geometry/treev.ts';
 import type { Commit, Delta, Frame, History, LayoutNode, OptionSchema, OptionSpec, Options, TreeState } from './types.ts';
 
@@ -183,7 +184,7 @@ export class Runner<S = unknown> {
         n.cid = e ? `f:${e.id}` : n.id;
       }
     }
-    return { commit: c.index, sha: c.sha, time: c.time, strategy: this.strategy.name, nodes, bbox: bbox(nodes) };
+    return { commit: c.index, sha: c.sha, time: c.time, strategy: this.strategy.name, nodes, bbox: bbox(nodes), wires: wireStyle(this.ctx.options.arrange) };
   }
 
   /** Replay every commit in [0, to], calling onFrame for each index for which want(i) is true. */

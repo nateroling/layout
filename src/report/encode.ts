@@ -75,6 +75,7 @@ export interface PlayerData {
   data: string; // base64 varint stream
   bytes: number; // raw byte length (before base64)
   sums: number[]; // per frame: frameChecksum of the encoded geometry
+  wires: string; // Frame.wires of the config (elbow | bus | straight | none)
 }
 
 /**
@@ -96,6 +97,7 @@ export class PlayerEncoder {
   private out = new Bytes();
   private frames: number[] = [];
   private sums: number[] = [];
+  private wires = 'elbow';
 
   constructor(strings: StringTable) {
     this.strings = strings;
@@ -115,6 +117,7 @@ export class PlayerEncoder {
 
   add(f: Frame, metaIndex: number): void {
     this.frames.push(metaIndex);
+    this.wires = f.wires ?? 'elbow';
     const cur = new Map<number, number[]>();
     let sum = 0;
     for (const n of f.nodes) {
@@ -182,6 +185,7 @@ export class PlayerEncoder {
       data: Buffer.from(raw).toString('base64'),
       bytes: raw.length,
       sums: this.sums,
+      wires: this.wires,
     };
   }
 }

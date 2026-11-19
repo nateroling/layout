@@ -107,6 +107,19 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
+/**
+ * Wire from parent platform p to child platform c, per Frame.wires. Returns null (no wire),
+ * [x1, y1, x2, y2] (straight, centre to centre) or [x1, y1, ym, x2, y2] (orthogonal: down,
+ * across at ym, down). `bus` turns just below the parent so multi-row (wrap) children share
+ * one horizontal run instead of crossing the rows above them.
+ */
+export function wirePath(style: string, p: Rect, c: Rect): number[] | null {
+  if (style === 'none') return null;
+  if (style === 'straight') return [p.x + p.w / 2, p.y + p.h / 2, c.x + c.w / 2, c.y + c.h / 2];
+  const x1 = p.x + p.w / 2, y1 = p.y + p.h, x2 = c.x + c.w / 2, y2 = c.y;
+  return [x1, y1, style === 'bus' ? y1 + Math.min(1, (y2 - y1) / 2) : (y1 + y2) / 2, x2, y2];
+}
+
 export function defaultViewport(f: Frame, margin = 2): Rect {
   const b = f.bbox;
   return { x: b.x - margin, y: b.y - margin, w: Math.max(1, b.w + 2 * margin), h: Math.max(1, b.h + 2 * margin) };
@@ -191,9 +204,8 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
       if (n.parent) {
         const p = byId.get(n.parent);
         if (p) {
-          const x1 = p.x + p.w / 2, y1 = p.y + p.h, x2 = n.x + n.w / 2, y2 = n.y;
-          const ym = (y1 + y2) / 2;
-          wires += `M${r2(x1)} ${r2(y1)}V${r2(ym)}H${r2(x2)}V${r2(y2)}`;
+          const w = wirePath(f.wires ?? 'elbow', p, n);
+          if (w) wires += `M${r2(w[0])} ${r2(w[1])}` + (w.length === 4 ? `L${r2(w[2])} ${r2(w[3])}` : `V${r2(w[2])}H${r2(w[3])}V${r2(w[4])}`);
         }
       }
       if (n.ghost) ghostDirs += rectPath(n);

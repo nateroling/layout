@@ -19,7 +19,7 @@ import { parseArgs } from 'node:util';
 import { loadHistory } from '../src/git/extract.ts';
 import { COLUMNS } from '../src/report/columns.ts';
 import { HORIZONS } from '../src/metrics/metrics.ts';
-import { buildReport } from '../src/report/html.ts';
+import { buildReport, type CompareGroup } from '../src/report/html.ts';
 import { runFixture, type FixtureInfo, type FixtureResult, type SweepConfig } from '../src/report/run.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,6 +50,9 @@ interface SweepFile {
   playerFrames?: number;
   filmFrames?: number;
   budgetMB?: number;
+  title?: string;
+  about?: string;
+  compare?: CompareGroup[];
 }
 
 const sweep = JSON.parse(readFileSync(values.sweep!, 'utf8')) as SweepFile;
@@ -159,7 +162,7 @@ async function main(): Promise<void> {
   if (!results.length) throw new Error('no fixture produced results');
 
   const command = `node bin/sweep.ts ${process.argv.slice(2).join(' ')}`.trim();
-  const rep = buildReport(results, { budgetBytes: (sweep.budgetMB ?? 15) * 1e6, generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC', command });
+  const rep = buildReport(results, { budgetBytes: (sweep.budgetMB ?? 15) * 1e6, generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC', command, title: sweep.title, about: sweep.about, compare: sweep.compare });
   writeFileSync(join(outDir, 'index.html'), rep.html);
   writeFileSync(join(outDir, 'metrics.json'), JSON.stringify(metricsJson(results, rep.levels), null, 1));
   writeFileSync(join(outDir, 'metrics.csv'), metricsCsv(results));
