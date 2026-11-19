@@ -10,6 +10,7 @@
 //           children's districts, shelf-packed near-square. No wires; nesting shows hierarchy.
 //   radial  TreeV wrapped around a circle: root in the middle, one ring per depth, each subtree
 //           gets the wedge its TreeV band would get (so band reservations still hold room).
+//   spiral  every directory's children coil around its platform in a square spiral, in order.
 //
 // Band-width reservations (the `width` hook) are TreeV-specific: wrap and nested ignore them
 // (only platform cols/rows reservations carry over); radial uses band widths as angles.
@@ -17,13 +18,13 @@
 import type { LayoutNode } from '../types.ts';
 import type { GeoOptions, LDir, Measured } from './treev.ts';
 
-export type Arrange = 'treev' | 'wrap' | 'nested' | 'radial';
-export const ARRANGES: Arrange[] = ['treev', 'wrap', 'nested', 'radial'];
+export type Arrange = 'treev' | 'wrap' | 'nested' | 'radial' | 'spiral';
+export const ARRANGES: Arrange[] = ['treev', 'wrap', 'nested', 'radial', 'spiral'];
 
 /** How a renderer should draw parent -> child wires for an arrangement. */
 export type WireStyle = 'elbow' | 'bus' | 'straight' | 'none';
 export function wireStyle(a: unknown): WireStyle {
-  return a === 'wrap' ? 'bus' : a === 'radial' ? 'straight' : a === 'nested' ? 'none' : 'elbow';
+  return a === 'wrap' ? 'bus' : a === 'radial' || a === 'spiral' ? 'straight' : a === 'nested' ? 'none' : 'elbow';
 }
 
 const E = 1e-9;
@@ -270,4 +271,75 @@ export function placeRadial(root: LDir, g: GeoOptions, m: Map<string, Measured>)
 function norm(a: number): number {
   const t = a % (2 * Math.PI);
   return t < 0 ? t + 2 * Math.PI : t;
+}
+
+// ---- spiral ----
+
+/**
+ * Each directory's platform sits in the middle of its block, and its children's blocks coil
+ * around it counter-clockwise in strips: along the bottom left to right, up the right side,
+ * along the top right to left, down the left side, then the next turn outside the last. A
+ * strip ends when the next block would pass the current box's side (a strip always takes at
+ * least one block), so blocks stay in the strategy's order and the box grows about evenly in
+ * both directions. Recursive: every subtree is itself a spiral.
+ */
+export function placeSpiral(root: LDir, g: GeoOptions, m: Map<string, Measured>): LayoutNode[] {
+  interface Blk {
+    w: number;
+    h: number;
+    px: number; // platform offset inside the block
+    py: number;
+    kx: number[]; // child block offsets inside the block
+    ky: number[];
+  }
+  const blocks = new Map<string, Blk>();
+  const gap = g.vgap, hg = g.hgap;
+  const size = (d: LDir): Blk => {
+    const me = m.get(d.id)!;
+    const kids = d.dirs.map(size);
+    let x0 = 0, y0 = 0, x1 = me.pw, y1 = me.ph;
+    const kx: number[] = [], ky: number[] = [];
+    let side = 0, i = 0;
+    while (i < kids.length) {
+      const bx0 = x0, by0 = y0, bx1 = x1, by1 = y1;
+      let cur = side === 0 ? bx0 : side === 1 ? by1 : side === 2 ? bx1 : by0;
+      for (let first = true; i < kids.length; first = false, i++) {
+        const k = kids[i];
+        let x: number, y: number;
+        if (side === 0) {
+          if (!first && cur + k.w > bx1 + E) break;
+          x = cur; y = by1 + gap; cur += k.w + hg;
+        } else if (side === 1) {
+          if (!first && cur - k.h < by0 - E) break;
+          x = bx1 + gap; y = cur - k.h; cur -= k.h + hg;
+        } else if (side === 2) {
+          if (!first && cur - k.w < bx0 - E) break;
+          x = cur - k.w; y = by0 - gap - k.h; cur -= k.w + hg;
+        } else {
+          if (!first && cur + k.h > by1 + E) break;
+          x = bx0 - gap - k.w; y = cur; cur += k.h + hg;
+        }
+        kx.push(x);
+        ky.push(y);
+        x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x + k.w); y1 = Math.max(y1, y + k.h);
+      }
+      side = (side + 1) % 4;
+    }
+    const b: Blk = { w: x1 - x0, h: y1 - y0, px: -x0, py: -y0, kx: kx.map((v) => v - x0), ky: ky.map((v) => v - y0) };
+    blocks.set(d.id, b);
+    return b;
+  };
+  size(root);
+  const nodes: LayoutNode[] = [];
+  const rec = (d: LDir, ox: number, oy: number, parent: string | null) => {
+    const me = m.get(d.id)!;
+    const b = blocks.get(d.id)!;
+    const x = ox + b.px, y = oy + b.py;
+    nodes.push({ id: d.id, kind: 'dir', path: d.path, parent, x, y, w: me.pw, h: me.ph, ghost: d.ghost || undefined });
+    pushFiles(nodes, d, me, g, x + g.pad, y + g.pad, !!d.ghost);
+    d.dirs.forEach((c, i) => rec(c, ox + b.kx[i], oy + b.ky[i], d.id));
+  };
+  rec(root, 0, 0, null);
+  return nodes;
 }

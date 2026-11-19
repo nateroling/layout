@@ -2,7 +2,7 @@
   "fixtures": null,
   "playerFrames": 150,
   "filmFrames": 6,
-  "budgetMB": 14,
+  "budgetMB": 15,
   "configs": [
     {
       "label": "recompute birth · treev",
@@ -41,6 +41,15 @@
       }
     },
     {
+      "label": "recompute birth · spiral",
+      "strategy": "recompute",
+      "options": {
+        "order": "birth",
+        "align": "left",
+        "arrange": "spiral"
+      }
+    },
+    {
       "label": "tombstone · treev",
       "strategy": "tombstone",
       "options": {
@@ -66,6 +75,13 @@
       "strategy": "tombstone",
       "options": {
         "arrange": "radial"
+      }
+    },
+    {
+      "label": "tombstone · spiral",
+      "strategy": "tombstone",
+      "options": {
+        "arrange": "spiral"
       }
     },
     {
@@ -99,10 +115,18 @@
         "order": "birth",
         "arrange": "radial"
       }
+    },
+    {
+      "label": "hindsight birth · spiral",
+      "strategy": "hindsight",
+      "options": {
+        "order": "birth",
+        "arrange": "spiral"
+      }
     }
   ],
   "title": "squarer arrangements",
-  "about": "<p><b>What this compares.</b> The same repos and stability strategies as the stability report, each drawn with four <b>arrangements</b> (geometry option <code>arrange</code>, which works with every strategy and leaves the other options alone):</p>\n<ul>\n<li><b>treev</b>: today's layout. Children sit side by side in one row below their parent, so big repos come out 5 to 15 times wider than tall.</li>\n<li><b>wrap</b>: the same tree and wires, but a directory's children flow onto several rows. For each directory, the row break that makes its whole subtree closest to square wins.</li>\n<li><b>nested</b>: Code City districts. A directory is a rectangle holding its file grid and its subdirectories' rectangles, packed close to square with the same rule. There are no wires; nesting shows the hierarchy.</li>\n<li><b>radial</b>: today's layout wrapped around a circle (the pie). The root is in the middle with one ring per depth, and each subtree gets the wedge its band would get in treev. Ring radii are the smallest that keep platforms apart.</li>\n</ul>\n<p><b>What I found</b> (public repos, last commit): wrap and nested bring the aspect from 5 to 15 down to between 0.6 and 1.2, and are as dense as treev or denser (vue-core, recompute birth: compactness 0.069 for treev, 0.080 wrap, 0.094 nested). Moves per tree change are similar or a little lower, but a move goes further when it happens (p95 jump 7 cells for treev, about 40 for wrap and nested), because a re-wrap shifts whole rows or districts. Radial is square too, but its middle is mostly empty: about 4 to 5 times less dense, and about 2 to 3 times more motion, because a ring's radius follows its two most crowded neighbours and changes as the tree changes. synth-deep is one long chain, so wrap has nothing to wrap there.</p>\n<p>Start with <a href=\"#compare\">side by side</a>; the scoreboards and filmstrips below cover all 12 configs.</p>",
+  "about": "<p><b>What this compares.</b> The same repos and stability strategies as the stability report, each drawn with five <b>arrangements</b> (geometry option <code>arrange</code>, which works with every strategy and leaves the other options alone):</p>\n<ul>\n<li><b>treev</b>: today's layout. Children sit side by side in one row below their parent, so big repos come out 5 to 15 times wider than tall.</li>\n<li><b>wrap</b>: the same tree and wires, but a directory's children flow onto several rows. For each directory, the row break that makes its whole subtree closest to square wins.</li>\n<li><b>nested</b>: Code City districts. A directory is a rectangle holding its file grid and its subdirectories' rectangles, packed close to square with the same rule. There are no wires; nesting shows the hierarchy.</li>\n<li><b>radial</b>: today's layout wrapped around a circle (the pie). The root is in the middle with one ring per depth, and each subtree gets the wedge its band would get in treev. Ring radii are the smallest that keep platforms apart.</li>\n<li><b>spiral</b>: every directory's subdirectories coil around its platform in a square spiral, in order: along the bottom, up the right, across the top, down the left, then the next turn further out. It's recursive, so every subtree is a small spiral. Wires are straight lines from parent to child.</li>\n</ul>\n<p><b>What I found</b> (public repos, last commit): wrap and nested bring the aspect from 5 to 15 down to between 0.6 and 1.2, and are as dense as treev or denser (vue-core, recompute birth: compactness 0.069 for treev, 0.080 wrap, 0.094 nested). Moves per tree change are similar or a little lower, but a move goes further when it happens (p95 jump 7 cells for treev, about 40 for wrap and nested), because a re-wrap shifts whole rows or districts. Radial is square too, but its middle is mostly empty: about 4 to 5 times less dense, and about 2 to 3 times more motion, because a ring's radius follows its two most crowded neighbours and changes as the tree changes. Spiral sits between them: about as dense as nested (vue-core 0.088) and square (aspect 0.6 to 1.3), with smaller jumps than wrap or nested (vue-core p95 19 cells against about 40). With recompute it moves more things per tree change on the smaller repos, because a growing block pushes every later block around the coil. Its straight wires get busy on big directories. synth-deep is one long chain, so wrap has nothing to wrap there.</p>\n<p>Start with <a href=\"#compare\">side by side</a>; the scoreboards and filmstrips below cover all 15 configs.</p>",
   "compare": [
     {
       "label": "strategy: recompute birth",
@@ -110,7 +134,8 @@
         "recompute birth · treev",
         "recompute birth · wrap",
         "recompute birth · nested",
-        "recompute birth · radial"
+        "recompute birth · radial",
+        "recompute birth · spiral"
       ]
     },
     {
@@ -119,7 +144,8 @@
         "tombstone · treev",
         "tombstone · wrap",
         "tombstone · nested",
-        "tombstone · radial"
+        "tombstone · radial",
+        "tombstone · spiral"
       ]
     },
     {
@@ -128,7 +154,8 @@
         "hindsight birth · treev",
         "hindsight birth · wrap",
         "hindsight birth · nested",
-        "hindsight birth · radial"
+        "hindsight birth · radial",
+        "hindsight birth · spiral"
       ]
     }
   ]

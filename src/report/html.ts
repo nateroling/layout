@@ -1039,7 +1039,7 @@ button:hover{border-color:#4d6f92}
 .strip figcaption{font-size:.7rem;line-height:1.3;color:var(--muted);margin-top:2px}
 .mv{color:var(--accent)}
 #player,#compare{scroll-margin-top:40px}
-.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .cgrid figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px;min-width:0}
 .cgrid figcaption{font-size:.8rem;margin-bottom:4px;overflow-wrap:anywhere}
 .cgrid canvas{display:block;width:100%;border-radius:3px;background:${PALETTE.ground}}

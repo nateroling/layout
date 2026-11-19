@@ -55,7 +55,7 @@ strategies` prints every strategy's options with type and default.
 
 **Geometry** (every strategy): `cell` > 0 (1), `pad` >= 0 (0.5), `hgap` >= 0 (1), `vgap` >= 0 (2),
 `align` left|center (left; recompute: center), `gridMode` sqrt|fixed (sqrt), `gridCols` integer >= 1 (8,
-used when `gridMode=fixed`), `arrange` treev|wrap|nested|radial (treev; see below). Zero gaps/pad are allowed:
+used when `gridMode=fixed`), `arrange` treev|wrap|nested|radial|spiral (treev; see below). Zero gaps/pad are allowed:
 neighbouring platforms may touch, never overlap.
 
 **Arrangement** (`arrange`, `src/geometry/arrange.ts`): where the measured platforms go, independent of the
@@ -64,7 +64,9 @@ above. `wrap` = TreeV with each directory's children shelf-wrapped onto rows, th
 subtree block is as square as possible. `nested` = Code City districts: a directory is a rectangle holding its
 file grid and its children's districts, shelf-packed near-square, no wires. `radial` = TreeV bands mapped to
 angles around the root, one ring per depth, each ring the smallest radius that keeps platforms' circumcircles
-apart (rounded up to a whole cell). Band-width reservations only affect `treev` and `radial`. A Frame carries
+apart (rounded up to a whole cell). `spiral` = recursive: a directory's children's blocks coil around its
+platform counter-clockwise in strips (bottom, right, top, left), a strip ending where the next block would pass
+the current box's side; straight wires. Band-width reservations only affect `treev` and `radial`. A Frame carries
 `wires` (elbow|bus|straight|none) so renderers draw the arrangement's connectors.
 
 | strategy | option | type | default | meaning |
@@ -100,7 +102,7 @@ apart (rounded up to a whole cell). Band-width reservations only affect `treev` 
 - `bin/viz.ts`: one commit or a filmstrip (`--every K`) → JSON + SVG. `--at`: `HEAD` (default), `#N` =
   first-parent index N (0-based), anything else = a sha prefix of >= 4 hex chars on the first-parent
   timeline. A bare number is always a sha prefix, never an index. `--opt k=v` is validated as above.
-- `sweep-square.json`: 3 strategies × 4 arrangements, with a "side by side" section (`compare` groups: configs
+- `sweep-square.json`: 3 strategies × 5 arrangements, with a "side by side" section (`compare` groups: configs
   on one shared slider). `node bin/sweep.ts --sweep sweep-square.json --out out/square`.
 - `bin/sweep.ts` + `sweep.json`: fixtures × configs → `out/report/index.html` (scoreboard, filmstrips at a
   consistent scale, scrubbable player) plus `metrics.json` / `metrics.csv`.

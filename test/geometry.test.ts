@@ -182,7 +182,7 @@ const geo: Options[] = [
   { cell: 2.5, pad: 0.1, hgap: 0.3, vgap: 0.1 },
 ];
 // Every arrangement, crossed with a subset of the geometry stressors (all of them would ×4 the run).
-const arranges: Options[] = [{}, { arrange: 'wrap' }, { arrange: 'nested' }, { arrange: 'radial' }];
+const arranges: Options[] = [{}, { arrange: 'wrap' }, { arrange: 'nested' }, { arrange: 'radial' }, { arrange: 'spiral' }];
 const geoFor = (a: Options): Options[] => (Object.keys(a).length ? [geo[0], geo[2], geo[3]] : geo);
 const own: Record<string, Options[]> = {
   recompute: [{ order: 'name' }, { order: 'birth', followRenames: false }],

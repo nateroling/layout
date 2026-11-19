@@ -110,3 +110,7 @@
   siblings need a ring circumference about as long as the whole TreeV width. Allocating angle per ring
   (or by leaf count) would pack tighter at the cost of children no longer sitting in their parent's wedge.
 - **Wires for wrap** turn just below the parent ("bus"), so later rows' wires run behind the rows above.
+- **Spiral direction and start**: counter-clockwise, starting below the parent and running left to right, so a
+  single child hangs below like TreeV and chains stay vertical. Gaps: `vgap` between the box and a strip,
+  `hgap` between blocks in a strip. Wires are straight centre to centre and cross earlier blocks on big
+  directories; routing them along the coil would read better.

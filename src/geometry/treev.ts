@@ -9,7 +9,7 @@
 // (order, ghosts, empty slots) and in the hooks that reserve extra room.
 
 import type { LayoutNode, OptionSchema } from '../types.ts';
-import { ARRANGES, placeNested, placeRadial, placeWrap, type Arrange } from './arrange.ts';
+import { ARRANGES, placeNested, placeRadial, placeSpiral, placeWrap, type Arrange } from './arrange.ts';
 
 export interface LFile {
   id: string;
@@ -55,7 +55,7 @@ export function geoSchema(over: Partial<GeoOptions> = {}): OptionSchema {
     align: { type: 'enum', values: ['left', 'center'], default: d.align, doc: 'platform/children position inside a band' },
     gridMode: { type: 'enum', values: ['sqrt', 'fixed'], default: d.gridMode, doc: 'sqrt: ~square grids; fixed: gridCols columns' },
     gridCols: { type: 'number', default: d.gridCols, min: 1, integer: true, doc: 'columns when gridMode=fixed' },
-    arrange: { type: 'enum', values: [...ARRANGES], default: d.arrange, doc: 'where platforms go: treev rows, wrap (multi-row), nested districts, radial rings (see arrange.ts)' },
+    arrange: { type: 'enum', values: [...ARRANGES], default: d.arrange, doc: 'where platforms go: treev rows, wrap (multi-row), nested districts, radial rings, spiral coils (see arrange.ts)' },
   };
 }
 
@@ -108,6 +108,8 @@ export function place(root: LDir, g: GeoOptions, m: Map<string, Measured>): Layo
       return placeNested(root, g, m);
     case 'radial':
       return placeRadial(root, g, m);
+    case 'spiral':
+      return placeSpiral(root, g, m);
     default:
       return placeTreev(root, g, m);
   }
