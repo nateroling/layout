@@ -10,39 +10,12 @@
   "budgetMB": 4,
   "configs": [
     {
-      "label": "recompute birth · treev",
-      "strategy": "recompute",
-      "options": {
-        "order": "birth",
-        "align": "left",
-        "arrange": "treev"
-      }
-    },
-    {
-      "label": "recompute birth · wrap",
-      "strategy": "recompute",
-      "options": {
-        "order": "birth",
-        "align": "left",
-        "arrange": "wrap"
-      }
-    },
-    {
       "label": "recompute birth · nested",
       "strategy": "recompute",
       "options": {
         "order": "birth",
         "align": "left",
         "arrange": "nested"
-      }
-    },
-    {
-      "label": "recompute birth · radial",
-      "strategy": "recompute",
-      "options": {
-        "order": "birth",
-        "align": "left",
-        "arrange": "radial"
       }
     },
     {
@@ -55,31 +28,10 @@
       }
     },
     {
-      "label": "tombstone · treev",
-      "strategy": "tombstone",
-      "options": {
-        "arrange": "treev"
-      }
-    },
-    {
-      "label": "tombstone · wrap",
-      "strategy": "tombstone",
-      "options": {
-        "arrange": "wrap"
-      }
-    },
-    {
       "label": "tombstone · nested",
       "strategy": "tombstone",
       "options": {
         "arrange": "nested"
-      }
-    },
-    {
-      "label": "tombstone · radial",
-      "strategy": "tombstone",
-      "options": {
-        "arrange": "radial"
       }
     },
     {
@@ -90,35 +42,11 @@
       }
     },
     {
-      "label": "tombstone keep · treev",
-      "strategy": "tombstone",
-      "options": {
-        "compactRatio": 1,
-        "arrange": "treev"
-      }
-    },
-    {
-      "label": "tombstone keep · wrap",
-      "strategy": "tombstone",
-      "options": {
-        "compactRatio": 1,
-        "arrange": "wrap"
-      }
-    },
-    {
       "label": "tombstone keep · nested",
       "strategy": "tombstone",
       "options": {
         "compactRatio": 1,
         "arrange": "nested"
-      }
-    },
-    {
-      "label": "tombstone keep · radial",
-      "strategy": "tombstone",
-      "options": {
-        "compactRatio": 1,
-        "arrange": "radial"
       }
     },
     {
@@ -133,42 +61,41 @@
       "label": "city",
       "strategy": "city",
       "options": {}
+    },
+    {
+      "label": "metro",
+      "strategy": "metro",
+      "options": {}
     }
   ],
   "title": "squarer arrangements",
-  "about": "<p><b>What this compares.</b> The four public repos from the stability report, under three strategies: recompute birth, tombstone, and <b>tombstone keep</b> (tombstone with <code>compactRatio=1</code>: deleted files leave holes that new files in the same folder refill, and folders never shrink), each drawn with five <b>arrangements</b> (geometry option <code>arrange</code>, which works with every strategy and leaves the other options alone):</p>\n<ul>\n<li><b>treev</b>: today's layout. Children sit side by side in one row below their parent, so big repos come out 5 to 15 times wider than tall.</li>\n<li><b>wrap</b>: the same tree and wires, but a directory's children flow onto several rows. For each directory, the row break that makes its whole subtree closest to square wins.</li>\n<li><b>nested</b>: Code City districts. A directory is a rectangle holding its file grid and its subdirectories' rectangles, packed close to square with the same rule. There are no wires; nesting shows the hierarchy.</li>\n<li><b>radial</b>: today's layout wrapped around a circle (the pie). The root is in the middle with one ring per depth, and each subtree gets the wedge its band would get in treev. Ring radii are the smallest that keep platforms apart.</li>\n<li><b>spiral</b>: every directory's subdirectories coil around its platform in a square spiral, in order: along the bottom, up the right, across the top, down the left, then the next turn further out. It's recursive, so every subtree is a small spiral. Wires are straight lines from parent to child.</li>\n<li><b>city</b> (its own strategy, shown as a sixth box in every group): a stretchable nested grid. Each folder is a district on its own grid of columns and rows; its subfolders take cells around its file lot in square-shell order and keep them. Columns and rows only ever widen, so a growing block pushes what lies beyond its seam outward by exactly the growth, and nothing is re-packed. Deleted files and folders leave holes that new arrivals reuse; nothing shrinks. Looks only backward.</li>\n</ul>\n<p><b>What I found</b> (public repos, last commit): wrap and nested bring the aspect from 5 to 15 down to between 0.6 and 1.2, and are as dense as treev or denser (vue-core, recompute birth: compactness 0.069 for treev, 0.080 wrap, 0.094 nested). Moves per tree change are similar or a little lower, but a move goes further when it happens (p95 jump 7 cells for treev, about 40 for wrap and nested), because a re-wrap shifts whole rows or districts. Radial is square too, but its middle is mostly empty: about 4 to 5 times less dense, and about 2 to 3 times more motion, because a ring's radius follows its two most crowded neighbours and changes as the tree changes. Spiral sits between them: about as dense as nested (vue-core 0.088) and square (aspect 0.6 to 1.3), with smaller jumps than wrap or nested (vue-core p95 19 cells against about 40). With recompute it moves more things per tree change on the smaller repos, because a growing block pushes every later block around the coil. Its straight wires get busy on big directories.</p>\n",
+  "about": "<p><b>What this compares.</b> The four public repos from the stability report, each laid out by four squarish layouts on one slider. Pick a strategy group to change what nested and spiral run with; city and metro are their own strategies and appear in every group.</p>\n<ul>\n<li><b>nested</b>: Code City districts. A folder is a rectangle holding its file grid and its subfolders' rectangles, re-packed close to square on every commit.</li>\n<li><b>spiral</b>: every folder's subfolders coil around it in a square spiral, in order, re-computed on every commit. Wires follow the coil.</li>\n<li><b>city</b>: a stretchable nested grid. Each folder is a district on its own grid; its subfolders take cells around its file lot and keep them. Columns and rows only ever widen, so growth pushes what lies beyond it outward and nothing is re-packed. Holes left by deletions are reused; nothing shrinks. Grows right and down from the top-left corner.</li>\n<li><b>metro</b>: city grown from the centre. The file lot sits in the middle of its district and subfolders take cells on a square spiral around it, in all four directions. Columns and rows still only widen, and every push points away from the centre. The root's file lot is pinned at the origin.</li>\n</ul>\n<p>Strategies for nested and spiral: <b>recompute birth</b> (fresh each commit), <b>tombstone</b> (deleted files keep their slot until a folder is half empty), <b>tombstone keep</b> (holes are refilled, folders never shrink).</p>",
   "compare": [
     {
       "label": "strategy: recompute birth",
       "configs": [
-        "recompute birth · treev",
-        "recompute birth · wrap",
         "recompute birth · nested",
-        "recompute birth · radial",
         "recompute birth · spiral",
-        "city"
+        "city",
+        "metro"
       ]
     },
     {
       "label": "strategy: tombstone",
       "configs": [
-        "tombstone · treev",
-        "tombstone · wrap",
         "tombstone · nested",
-        "tombstone · radial",
         "tombstone · spiral",
-        "city"
+        "city",
+        "metro"
       ]
     },
     {
       "label": "strategy: tombstone keep (never shrinks)",
       "configs": [
-        "tombstone keep · treev",
-        "tombstone keep · wrap",
         "tombstone keep · nested",
-        "tombstone keep · radial",
         "tombstone keep · spiral",
-        "city"
+        "city",
+        "metro"
       ]
     }
   ],

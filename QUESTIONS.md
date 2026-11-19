@@ -125,3 +125,6 @@
 - **File lots** keep slots (holes reused, earliest first) but still reflow when their column count grows
   (ceil(sqrt(slots))). A fixed lot width per directory would remove that.
 - **Child placement is top-left in its cell**, so it only moves when columns/rows before it widen.
+- **metro** spirals right, down, left, up from the lot (cell order (1,0), (1,1), (0,1), (-1,1), ...). The first
+  big child (vue-core's `packages`) lands at (1,1) and dominates one quadrant, so the lot is not visually centred
+  on big repos. Placing children by size (big ones further out) would centre better but breaks arrival order.

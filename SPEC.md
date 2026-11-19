@@ -40,6 +40,7 @@ git log --first-parent --raw  ──►  History (events per commit)  ──► 
 | `hindsight` | uses future | One layout of the union of every path that ever existed; commit N just shows the live subset. Upper bound on stability, lower bound on compactness. |
 | `slack` | online, stateful | Per-directory reservations for cols, rows and band width. When the requirement exceeds a reservation, grow it (`growthMode`). Never shrinks; a vanished directory drops its reservation. |
 | `city` | online, stateful | Stretchable nested grid (its own arrangement; no `arrange` option). Each directory is a district on its own grid; cell 0 is its file lot, child directories take the earliest free cell in square-shell order and keep it. Column widths / row heights are ratchets (never shrink), so growth slides what lies beyond a seam outward and nothing is re-packed. Deleted files/dirs leave holes that new arrivals reuse. See `src/strategies/city.ts`. |
+| `metro` | online, stateful | `city` grown from the centre: the file lot is cell (0,0) and child directories take cells on a square spiral around it in all four directions; negative columns/rows grow leftward/upward and children hug the side of their cell nearest the lot, so every push points away from the centre. The root lot is pinned at the origin. |
 | `tombstone` | online, stateful | Persistent per-directory slot lists in arrival order. Deleted files/dirs keep their slot as ghosts. `reuse` lets new files infill the earliest ghost slot (no movement). Local compaction of a directory when its ghost ratio exceeds `compactRatio` or a ghost outlives `ghostTtl`. Optional reservations as in `slack`. |
 
 ## Options
@@ -80,7 +81,7 @@ child to the sibling before it (`LayoutNode.link`; the player carries it in the 
 | slack | `slack` | number >= 0 | 0.25 | initial headroom: first reservation = `ceil(required * (1 + slack))` |
 | slack | `growth` | number >= 1 | 1.5 | factor when a reservation is exceeded |
 | slack | `growthMode` | multiply\|additive | multiply | band growth: `ceil(required * growth)`, or headroom only where growth originates (see `reserve.ts`) |
-| city | `cell`, `pad`, `hgap` | geometry | as above | the only geometry keys city takes (`hgap` = gap between its columns and rows) |
+| city, metro | `cell`, `pad`, `hgap` | geometry | as above | the only geometry keys city takes (`hgap` = gap between its columns and rows) |
 | tombstone | `reuse` | boolean | true | new files infill the earliest ghost slot; a returning directory revives in place |
 | tombstone | `compactRatio` | number 0..1 | 0.5 | compact a live directory whose ghost fraction exceeds this (1 = never) |
 | tombstone | `ghostTtl` | integer >= 0 | 0 | a ghost older than this many commits compacts its directory (0 = forever) |
