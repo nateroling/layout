@@ -57,9 +57,9 @@ function liveShapes(t: TreeState, ord: Order): (path: string) => DirShape | unde
 export const slack: Strategy<SlackState> = {
   name: 'slack',
   description:
-    'Online: live tree with per-directory reservations (cols, rows, band width) that grow by `growth` when exceeded and never shrink. order, slack, growth, gridMode.',
+    'Online: live tree with per-directory reservations (cols, rows, band width) that grow when exceeded (growthMode=multiply: ceil(required*growth); additive: headroom only where growth originates) and never shrink. order, slack, growth, growthMode, gridMode.',
   usesFuture: false,
-  defaults: { order: 'birth', slack: 0.25, growth: 1.5, align: 'left', gridMode: 'sqrt', gridCols: 8 },
+  defaults: { order: 'birth', slack: 0.25, growth: 1.5, growthMode: 'multiply', align: 'left', gridMode: 'sqrt', gridCols: 8 },
   init: () => ({ res: new Map() }),
   step(state, tree, _c, delta, ctx) {
     if (delta.dirsRemoved.length) dropReservations(state.res, (p) => tree.dirs.has(p));

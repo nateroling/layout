@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCommit, dirname, emptyTree } from '../src/model/tree.ts';
-import { Runner } from '../src/engine.ts';
+import { ancestors, applyCommit, dirname, emptyTree } from '../src/model/tree.ts';
+import { Runner, mergeOptions } from '../src/engine.ts';
 import { getStrategy, strategies } from '../src/strategies/index.ts';
 import type { Change, Frame, History, LayoutNode, Options } from '../src/types.ts';
 import { hist, sample } from './core.test.ts';
@@ -97,7 +97,15 @@ function checkRun(h: History, name: string, opts: Options, followRenames = opts.
 const combos: Record<string, Options[]> = {
   recompute: [{}, { order: 'birth', align: 'left' }, { gridMode: 'fixed', gridCols: 3 }],
   hindsight: [{}, { order: 'name' }, { showGhosts: true }, { showGhosts: true, followRenames: false, align: 'center' }],
-  slack: [{}, { slack: 0 }, { slack: 1, growth: 2, order: 'name' }, { gridMode: 'fixed', gridCols: 4 }, { followRenames: false }],
+  slack: [
+    {},
+    { slack: 0 },
+    { slack: 1, growth: 2, order: 'name' },
+    { gridMode: 'fixed', gridCols: 4 },
+    { followRenames: false },
+    { growthMode: 'additive' },
+    { growthMode: 'additive', slack: 0, growth: 2, align: 'center' },
+  ],
   tombstone: [
     {},
     { reuse: false },
@@ -106,6 +114,9 @@ const combos: Record<string, Options[]> = {
     { slack: 0.25 },
     { slack: 0.5, growth: 2, compactRatio: 1, align: 'center' },
     { followRenames: false, gridMode: 'fixed', gridCols: 3 },
+    { ghostTtl: 5 },
+    { ghostTtl: 3, compactRatio: 1, reuse: false },
+    { ghostTtl: 4, slack: 0.25, growthMode: 'additive' },
   ],
 };
 
@@ -237,7 +248,6 @@ test('incremental reservations equal a full measure() with growing hooks', async
   const { growingHooks, reserveOptions, dropReservations } = await import('../src/strategies/reserve.ts');
   const { liveTree } = await import('../src/strategies/recompute.ts');
   const { buildLDir } = await import('../src/strategies/tombstone.ts');
-  const { mergeOptions } = await import('../src/engine.ts');
   const cases: [string, Options][] = [
     ['slack', {}],
     ['slack', { order: 'name', slack: 0.1, growth: 1.2, gridMode: 'fixed', gridCols: 3 }],
@@ -245,6 +255,9 @@ test('incremental reservations equal a full measure() with growing hooks', async
     ['tombstone', { slack: 0.25 }],
     ['tombstone', { slack: 0.5, reuse: false, compactRatio: 0.3 }],
     ['tombstone', { slack: 0.25, compactRatio: 1, followRenames: false }],
+    ['slack', { growthMode: 'additive' }],
+    ['slack', { growthMode: 'additive', slack: 0, growth: 2, cell: 1.3, pad: 0.35, hgap: 0.7 }],
+    ['tombstone', { slack: 0.25, growthMode: 'additive', ghostTtl: 6 }],
   ];
   for (const h of [sample, randomHistory(3, 150), randomHistory(99, 150)]) {
     for (const [name, given] of cases) {
@@ -261,14 +274,118 @@ test('incremental reservations equal a full measure() with growing hooks', async
         s.step(st, t, c, d, ctx);
         if (name === 'slack') {
           dropReservations(ref, (p) => t.dirs.has(p));
-          measure(liveTree(t, ctx.options.order === 'name' ? 'name' : 'birth'), g, growingHooks(ref, ro));
+          measure(liveTree(t, ctx.options.order === 'name' ? 'name' : 'birth'), g, growingHooks(ref, ro, g));
         } else {
           // A directory entry replaced by a fresh one (reuse=false) starts a fresh reservation.
           dropReservations(ref, (p) => st.dirs.has(p) && (!before!.has(p) || before!.get(p) === st.dirs.get(p)));
-          measure(buildLDir(st, t), g, growingHooks(ref, ro));
+          measure(buildLDir(st, t), g, growingHooks(ref, ro, g));
         }
         assert.deepEqual(st.res, ref, `${name} ${JSON.stringify(given)} @${c.index}`);
       }
     }
   }
+});
+
+/**
+ * Drive a strategy by hand so the test can see its reservations. One leaf
+ * (a/b/c) gains a file per commit inside a 4-deep tree with siblings on both
+ * sides at every level.
+ */
+function leafGrowth(name: string, opts: Options, commits = 120) {
+  const steps: Change[][] = [[
+    A('r.txt'),
+    A('a/b/a0/f'), A('a/b/c/f0'), A('a/b/z/f'), // left sibling, leaf, right sibling
+    A('a/b/k/f'), A('a/y/f'), A('q/f'), A('q/w/f'),
+  ]];
+  for (let i = 1; i < commits; i++) steps.push([A(`a/b/c/f${i}`)]);
+  const h = hist(steps);
+  const s = getStrategy(name);
+  const ctx = { options: mergeOptions(s, opts) };
+  const t = emptyTree();
+  const st = s.init(ctx);
+  const out: { frame: LayoutNode[]; width: Map<string, number> }[] = [];
+  for (const c of h.commits) {
+    const d = applyCommit(t, c, true);
+    s.step(st, t, c, d, ctx);
+    const res = (st as { res: Map<string, { width: number }> }).res;
+    out.push({ frame: s.frame(st, t, c, ctx), width: new Map([...res].map(([k, v]) => [k, v.width])) });
+  }
+  return out;
+}
+
+export let overflowStats = { overflows: 0, absorbed: 0, moved: 0 };
+
+/** Returns the largest (displacement / leaf width growth) seen on overflow steps. */
+export function checkConfinement(name: string, opts: Options): number {
+  const run = leafGrowth(name, opts);
+  const leaf = 'a/b/c';
+  let worst = 0;
+  overflowStats = { overflows: 0, absorbed: 0, moved: 0 };
+  for (let i = 2; i < run.length; i++) {
+    const before = run[i - 1], after = run[i];
+    const prev = new Map(before.frame.map((n) => [n.id, n]));
+    const L = prev.get(`d:${leaf}`)!;
+    const movedNodes = after.frame.filter((n) => {
+      const p = prev.get(n.id);
+      return p && (p.x !== n.x || p.y !== n.y) && n.parent !== `d:${leaf}`; // the leaf's own files may reflow
+    });
+    const dL = after.width.get(leaf)! - before.width.get(leaf)!;
+    if (dL === 0) {
+      assert.deepEqual(movedNodes.map((n) => n.id), [], `${name} ${JSON.stringify(opts)} @${i}: no overflow, nothing moves`);
+      continue;
+    }
+    // Nearest ancestor that absorbed the growth (its band did not grow).
+    const absorber = ancestors(leaf + '/x').slice(1).find((a) => after.width.get(a) === before.width.get(a));
+    const A = absorber === undefined ? undefined : prev.get(`d:${absorber}`)!;
+    overflowStats.overflows++;
+    if (A) overflowStats.absorbed++;
+    overflowStats.moved += movedNodes.length;
+    for (const n of movedNodes) {
+      const p = prev.get(n.id)!;
+      assert.ok(p.x > L.x, `${name} @${i}: ${n.path} left of the leaf moved`);
+      if (A) assert.ok(p.x < A.x + before.width.get(absorber!)!, `${name} @${i}: ${n.path} outside ${absorber}'s band moved`);
+      worst = Math.max(worst, Math.hypot(n.x - p.x, n.y - p.y) / dL);
+    }
+  }
+  return worst;
+}
+
+test('reservations: a leaf overflow only moves nodes right of it inside the nearest absorbing band', () => {
+  for (const name of ['slack', 'tombstone']) {
+    for (const growth of [1.5, 1.2]) {
+      const base: Options = name === 'tombstone' ? { slack: 0.25, growth } : { growth };
+      checkConfinement(name, { ...base, growthMode: 'multiply' });
+      const additive = checkConfinement(name, { ...base, growthMode: 'additive' });
+      assert.ok(overflowStats.overflows >= 3);
+      assert.ok(additive <= 1 + 1e-9, `${name} additive: nothing moves further than the leaf grew (ratio ${additive})`);
+    }
+  }
+  // The spec rule amplifies: ancestors re-multiply their whole width.
+  assert.ok(checkConfinement('slack', { growthMode: 'multiply' }) > 1);
+});
+
+test('additive growth: ancestors grow exactly by the overflow, the originating platform carries the headroom', () => {
+  const run = leafGrowth('slack', { growthMode: 'additive' });
+  for (let i = 2; i < run.length; i++) {
+    const b = run[i - 1].width, a = run[i].width;
+    for (const anc of ['a/b', 'a', '']) {
+      const grew = a.get(anc)! - b.get(anc)!;
+      const child = anc === 'a/b' ? 'a/b/c' : anc === 'a' ? 'a/b' : 'a';
+      assert.ok(grew <= a.get(child)! - b.get(child)! + 1e-9, `@${i} ${anc || '/'} grew ${grew}, more than its child`);
+    }
+  }
+});
+
+test('tombstone ghostTtl: an expired ghost triggers local compaction even if its directory is untouched', () => {
+  const steps: Change[][] = [[...Array.from({ length: 10 }, (_, i) => A(`a/f${i}`)), A('b/x'), A('c/x')], [D('a/f3'), D('b/x')]];
+  for (let i = 2; i < 10; i++) steps.push([M('c/x', i)]);
+  const h = hist(steps);
+  const ghosts = (opts: Options) => frames(h, 'tombstone', opts).map((f) => f.nodes.filter((n) => n.ghost).map((n) => n.path).sort().join(','));
+  // b/x lives in the ghost dir b; the root has 1 ghost kid of 3 (< 0.5), a has 1 ghost of 10.
+  assert.deepEqual(ghosts({ ghostTtl: 3 }), ['', 'a/f3,b,b/x', 'a/f3,b,b/x', 'a/f3,b,b/x', 'a/f3,b,b/x', '', '', '', '', '']);
+  assert.ok(ghosts({}).every((g, i) => i === 0 || g === 'a/f3,b,b/x'), 'ghostTtl=0 keeps ghosts forever');
+  // Compaction moves only the directory's own later slots and the bands to its right.
+  const fs = frames(h, 'tombstone', { ghostTtl: 3 });
+  const x = (f: Frame, p: string) => f.nodes.find((n) => n.path === p && !n.ghost)!;
+  assert.deepEqual([x(fs[5], 'a/f0').x, x(fs[5], 'a/f0').y], [x(fs[4], 'a/f0').x, x(fs[4], 'a/f0').y]);
 });

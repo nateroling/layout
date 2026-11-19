@@ -6,6 +6,21 @@
 // ceil(required * growth); otherwise keep. Never shrinks. During frame() the
 // "fixed" hooks only read it back, so frame() stays pure. Cols are reserved too:
 // in sqrt grids a change of cols reflows every file of the platform.
+//
+// growthMode decides what an overflowing BAND (width) grows to:
+//   multiply (default, the spec rule): ceil(required * growth). An ancestor whose
+//     band overflows because one child grew re-multiplies its WHOLE width, so the
+//     extra room cascades up and everything to the right jumps by ~(growth-1) x
+//     the ancestor's width.
+//   additive: headroom only where the growth originates.
+//     - own platform is the binding term (pw >= children): required + ceil((growth-1) * pw)
+//     - children are the binding term: exactly `required` — the child that
+//       overflowed already carries its own headroom, so ancestors pass its
+//       increment up without amplifying it. Nodes to the right never move by more
+//       than the originating directory's own growth.
+//   In both modes an ancestor first absorbs a child's growth in its existing
+//   slack (required <= reservation -> no change). Cols and rows are a platform's
+//   own size, so both modes grow them the same way: ceil(required * growth).
 
 import type { GeoHooks, GeoOptions, LDir } from '../geometry/treev.ts';
 import { ancestors } from '../model/tree.ts';
@@ -20,17 +35,24 @@ export interface Reservation {
 /** Keyed by directory path. Plain Map of plain objects: structuredClone-able. */
 export type Reservations = Map<string, Reservation>;
 
+export type GrowthMode = 'multiply' | 'additive';
+
 export interface ReserveOptions {
   slack: number; // initial headroom fraction, e.g. 0.25
   growth: number; // growth factor when a reservation is exceeded, e.g. 1.5
+  growthMode: GrowthMode;
 }
 
-export function reserveOptions(o: Options, base: ReserveOptions): ReserveOptions {
+export function reserveOptions(o: Options, base: { slack: number; growth: number }): ReserveOptions {
   const n = (v: unknown, d: number) => {
     const x = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
     return Number.isFinite(x) ? x : d;
   };
-  return { slack: Math.max(0, n(o.slack, base.slack)), growth: Math.max(1, n(o.growth, base.growth)) };
+  return {
+    slack: Math.max(0, n(o.slack, base.slack)),
+    growth: Math.max(1, n(o.growth, base.growth)),
+    growthMode: o.growthMode === 'additive' ? 'additive' : 'multiply',
+  };
 }
 
 // ceil that ignores float noise (e.g. 3 * 1.1 = 3.3000000000000003 is fine, 2 * 1.5 = 3 stays 3).
@@ -40,6 +62,13 @@ function grow(cur: number, required: number, ro: ReserveOptions): number {
   if (cur <= 0) return Math.max(required, ceil(required * (1 + ro.slack)));
   if (required > cur) return Math.max(required, ceil(required * ro.growth));
   return cur;
+}
+
+/** Band width: as grow(), but in additive mode headroom only comes from the own platform. */
+function growWidth(cur: number, required: number, pw: number, ro: ReserveOptions): number {
+  if (ro.growthMode === 'multiply' || cur <= 0 || required <= cur) return grow(cur, required, ro);
+  if (pw >= required) return required + ceil((ro.growth - 1) * pw);
+  return required;
 }
 
 function entry(res: Reservations, path: string): Reservation {
@@ -53,7 +82,7 @@ function entry(res: Reservations, path: string): Reservation {
  * Strategies use updateReservations() instead (same result, incremental); this is
  * kept as the reference the tests compare against.
  */
-export function growingHooks(res: Reservations, ro: ReserveOptions): GeoHooks {
+export function growingHooks(res: Reservations, ro: ReserveOptions, g: GeoOptions): GeoHooks {
   return {
     cols(d: LDir, required: number) {
       const r = entry(res, d.path);
@@ -64,8 +93,8 @@ export function growingHooks(res: Reservations, ro: ReserveOptions): GeoHooks {
       return (r.rows = grow(r.rows, required, ro));
     },
     width(d: LDir, required: number) {
-      const r = entry(res, d.path);
-      return (r.width = grow(r.width, required, ro));
+      const r = entry(res, d.path); // r.cols was just set by the cols hook
+      return (r.width = growWidth(r.width, required, r.cols * g.cell + 2 * g.pad, ro));
     },
   };
 }
@@ -130,6 +159,6 @@ export function updateReservations(
     sh.kids.forEach((k, i) => {
       childrenW += (res.get(k)?.width ?? 0) + (i > 0 ? g.hgap : 0);
     });
-    r.width = grow(r.width, Math.max(pw, childrenW), ro);
+    r.width = growWidth(r.width, Math.max(pw, childrenW), pw, ro);
   }
 }

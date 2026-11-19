@@ -18,15 +18,33 @@
   (initial headroom again). Keeps state bounded by the live tree. Alternative: keep it forever, which
   would make a returning directory reclaim its old size.
 - **slack trades frequency for size of moves.** On real repos it moves on ~half as many steps as
-  `recompute(order=birth)`, but mean displacement is similar or higher: a reservation overflow grows by
-  `ceil(required * growth)`, and that growth cascades up through every ancestor band, so the nodes to
-  the right jump by ~half the ancestor's width at once. Possible refinements: grow by the child's
-  increment rather than re-multiplying the ancestor's whole requirement; or a growth factor that decays
-  with depth. Left as specified for now.
+  `recompute(order=birth)`, but with the spec rule (`growthMode=multiply`, still the default) mean
+  displacement is similar or higher: an overflow grows to `ceil(required * growth)`, and that cascades up
+  through every ancestor band, each re-multiplying its whole width. On `synth-deep` this compounds to
+  1.5^depth (max jump ~21 000 units).
+- **`growthMode=additive`** (slack and tombstone): headroom is added only where growth originates. A band
+  whose own platform is the binding term grows to `required + ceil((growth-1) * pw)`. A band whose
+  children are the binding term grows to exactly `required`: the overflowing child already carries its
+  own headroom, so its increment is passed up unamplified and nothing moves further than the originating
+  directory grew. In both modes an ancestor first absorbs a child's growth in any slack it already has.
+  Cols/rows are a platform's own size and grow identically in both modes.
+  I also tried giving ancestors headroom proportional to their overflow
+  (`required + ceil((growth-1) * (required - reserved))`). It was worse on every repo (amplifies by
+  `growth` per level; synth-deep max jump 11 658), so I dropped it. Open question: should additive become
+  the default? It beats or ties multiply on mean displacement on all 9 fixtures. Even so, `slack`
+  with additive growth is still slightly worse than plain `recompute(order=birth)` on the three large
+  public repos (it does win on synth-explode/churn/alphabet).
+- **tombstone `ghostTtl`** (default 0 = forever). A ghost older than the TTL triggers the same local
+  compaction as the ratio, which drops ALL ghosts of that directory, not just the expired one (one
+  disruption instead of several). Expiry is tracked in a FIFO queue in state, so an expired ghost is
+  handled at the first commit where `now - died > ghostTtl`, even if its directory is untouched that
+  commit. A ghost inside a ghost directory goes when the ghost directory's live parent compacts. With
+  `ghostTtl=200` almost no ghosts are left at HEAD (ghost nodes: express 202 → 6, ripgrep 197 → 21,
+  vue-core 235 → 5), but each expiry is a compaction, so mean displacement rises (express 0.061 → 0.087).
 - **slack rows/cols start reserved even for file-less directories** (1 required → 2 reserved at slack
   0.25), so every platform is at least 2×2 cells. Follows the spec formula literally.
 - **tombstone `slack` defaults to 0 = reservations off** (not "reservations with zero initial headroom");
-  any `slack > 0` turns them on, with `growth` (default 1.5).
+  any `slack > 0` turns them on, with `growth` (default 1.5) and `growthMode` (default multiply).
 - **tombstone `reuse=false` and a re-appearing directory**: the ghost entry (and its ghost subtree) is
   dropped and a fresh entry is appended at the end of the parent's list, since there can only be one
   `d:<path>` node. With `reuse=true` it is revived in place, keeping its ghost files (which new files then
@@ -37,3 +55,12 @@
 - **tombstone compaction only applies to live directories.** A ghost directory is all ghosts by
   definition; it is removed as a unit when its (live) parent compacts. Ghost fraction counts direct
   slots and direct child dirs only. Files arriving in one commit are slotted in path order.
+
+## Report / metrics (sweep)
+
+- **Renames count as moves.** With `followRenames=true` a renamed file is one node that relocates, so it counts as displacement (hindsight's big max jumps on vue-core are renames). With `followRenames=false` a rename is delete + add and costs nothing, which flatters that config.
+- **"Moved / tree change"** (share of surviving nodes that moved, averaged only over commits that add, delete or rename) is the headline stability number. Per-commit averages are diluted by content-only commits, which never move anything.
+- **Compactness is bbox-based**, so on very wide repos (vue-core is ~50:1) it mostly measures aspect ratio. Compare it within a repo, not across repos.
+- **Wide repos get stacked full-width filmstrips**, scaled per config, with a grey bar showing relative width; other repos use thumbnails at one shared scale.
+- **Name order is a taste metric.** Birth-order strategies violate it by design.
+- **Player/filmstrip "moved" highlights are cumulative** between sampled frames (about N/150 commits apart), so they overstate per-commit movement.

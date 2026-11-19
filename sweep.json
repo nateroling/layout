@@ -1,0 +1,23 @@
+{
+  "fixtures": null,
+  "playerFrames": 150,
+  "filmFrames": 8,
+  "budgetMB": 15,
+  "configs": [
+    { "label": "fsn classic", "strategy": "recompute", "options": { "order": "name", "align": "center", "gridMode": "sqrt" } },
+    { "label": "recompute birth", "strategy": "recompute", "options": { "order": "birth", "align": "left", "gridMode": "sqrt" } },
+    { "label": "recompute birth fixed8", "strategy": "recompute", "options": { "order": "birth", "align": "left", "gridMode": "fixed", "gridCols": 8 } },
+    { "label": "hindsight birth", "strategy": "hindsight", "options": { "order": "birth" } },
+    { "label": "hindsight name", "strategy": "hindsight", "options": { "order": "name" } },
+    { "label": "slack", "strategy": "slack", "options": {} },
+    { "label": "slack 0.5 x2", "strategy": "slack", "options": { "slack": 0.5, "growth": 2 } },
+    { "label": "slack additive", "strategy": "slack", "options": { "growthMode": "additive" } },
+    { "label": "slack name", "strategy": "slack", "options": { "order": "name" } },
+    { "label": "tombstone", "strategy": "tombstone", "options": {} },
+    { "label": "tombstone no-reuse", "strategy": "tombstone", "options": { "reuse": false, "compactRatio": 1 } },
+    { "label": "tombstone ttl200", "strategy": "tombstone", "options": { "ghostTtl": 200 } },
+    { "label": "tombstone slack .25", "strategy": "tombstone", "options": { "slack": 0.25 } },
+    { "label": "tombstone slack .25 additive", "strategy": "tombstone", "options": { "slack": 0.25, "growthMode": "additive" } },
+    { "label": "tombstone no-renames", "strategy": "tombstone", "options": { "followRenames": false } }
+  ]
+}

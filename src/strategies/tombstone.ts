@@ -12,7 +12,11 @@
 //                       (ghost slots + ghost child dirs) / (all slots + child dirs)
 //                       exceeds this is compacted locally (ghosts dropped, live order
 //                       kept). 1 = never.
-//   slack (0 = off), growth (1.5)   per-directory reservations from reserve.ts.
+//   ghostTtl (0)        a ghost older than this many commits triggers the same local
+//                       compaction of its (live) parent directory, at the first
+//                       commit where it has expired. 0 = ghosts live forever.
+//   slack (0 = off), growth (1.5), growthMode (multiply|additive)
+//                       per-directory reservations from reserve.ts.
 //
 // Renames (followRenames): within a directory the file keeps its slot; across
 // directories it leaves a ghost behind and arrives in the new directory.
@@ -25,12 +29,13 @@ import type { Strategy } from '../engine.ts';
 import { geoFromOptions, measure, place, type LDir, type LFile } from '../geometry/treev.ts';
 import { cmp, dirname } from '../model/tree.ts';
 import type { FileEntry, LayoutNode, Options, TreeState } from '../types.ts';
-import { fixedHooks, reserveOptions, updateReservations, type Reservations } from './reserve.ts';
+import { fixedHooks, reserveOptions, updateReservations, type Reservations, type ReserveOptions } from './reserve.ts';
 
 export interface TSlot {
   fid: number; // file id (live) or id of the file that left it (ghost)
   path: string; // current path (live) or last-known path (ghost)
   ghost: boolean;
+  died: number; // commit index it became a ghost (ghosts only)
   gid: string; // node id while ghost
   size: number; // last-known, ghosts only
   born: number;
@@ -40,6 +45,7 @@ export interface TSlot {
 export interface TDir {
   path: string;
   ghost: boolean;
+  died: number; // commit index it became a ghost (ghost dirs only)
   slots: TSlot[];
   kids: string[]; // child directory paths, persistent order
 }
@@ -48,23 +54,30 @@ export interface TombstoneState {
   dirs: Map<string, TDir>; // every directory entry, live or ghost
   seq: number; // counter for ghost ids of moved-away files
   res: Reservations;
+  // ghostTtl > 0: [expiresAt, directory to re-check] in creation order, so sorted by expiresAt.
+  expiry: [number, string][];
 }
 
-interface TOpts {
+interface TOpts extends ReserveOptions {
   reuse: boolean;
   compactRatio: number;
-  slack: number;
-  growth: number;
+  ghostTtl: number;
 }
 
 function opts(o: Options): TOpts {
   const ro = reserveOptions(o, { slack: 0, growth: 1.5 });
   const r = typeof o.compactRatio === 'number' ? o.compactRatio : Number(o.compactRatio);
-  return { reuse: o.reuse !== false, compactRatio: Number.isFinite(r) ? r : 0.5, slack: ro.slack, growth: ro.growth };
+  const ttl = typeof o.ghostTtl === 'number' ? o.ghostTtl : Number(o.ghostTtl);
+  return {
+    ...ro,
+    reuse: o.reuse !== false,
+    compactRatio: Number.isFinite(r) ? r : 0.5,
+    ghostTtl: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : 0,
+  };
 }
 
 function newDir(path: string): TDir {
-  return { path, ghost: false, slots: [], kids: [] };
+  return { path, ghost: false, died: 0, slots: [], kids: [] };
 }
 
 /** Remove a directory entry and its whole subtree from the map. */
@@ -84,6 +97,17 @@ function ghostFraction(d: TDir, s: TombstoneState): number {
   return n ? g / n : 0;
 }
 
+/** Commit index of the oldest direct ghost (slot or child dir), or Infinity. */
+function oldestGhost(d: TDir, s: TombstoneState): number {
+  let t = Infinity;
+  for (const x of d.slots) if (x.ghost && x.died < t) t = x.died;
+  for (const k of d.kids) {
+    const c = s.dirs.get(k)!;
+    if (c.ghost && c.died < t) t = c.died;
+  }
+  return t;
+}
+
 function compact(s: TombstoneState, d: TDir) {
   d.slots = d.slots.filter((x) => !x.ghost);
   const keep: string[] = [];
@@ -94,8 +118,9 @@ function compact(s: TombstoneState, d: TDir) {
   d.kids = keep;
 }
 
-function toGhost(slot: TSlot, e: FileEntry, path: string, gid: string) {
+function toGhost(slot: TSlot, e: FileEntry, path: string, gid: string, at: number) {
   slot.ghost = true;
+  slot.died = at;
   slot.gid = gid;
   slot.path = path;
   slot.size = e.size;
@@ -122,13 +147,18 @@ export function buildLDir(s: TombstoneState, tree: TreeState): LDir {
 export const tombstone: Strategy<TombstoneState> = {
   name: 'tombstone',
   description:
-    'Online: persistent per-directory slots in arrival order; deletions leave ghosts. reuse (infill earliest ghost), compactRatio (local compaction; 1 = never), slack/growth reservations.',
+    'Online: persistent per-directory slots in arrival order; deletions leave ghosts. reuse (infill earliest ghost), compactRatio (local compaction; 1 = never), ghostTtl (commits; 0 = forever), slack/growth/growthMode reservations.',
   usesFuture: false,
-  defaults: { reuse: true, compactRatio: 0.5, slack: 0, growth: 1.5, align: 'left', gridMode: 'sqrt', gridCols: 8 },
-  init: () => ({ dirs: new Map([['', newDir('')]]), seq: 0, res: new Map() }),
+  defaults: { reuse: true, compactRatio: 0.5, ghostTtl: 0, slack: 0, growth: 1.5, growthMode: 'multiply', align: 'left', gridMode: 'sqrt', gridCols: 8 },
+  init: () => ({ dirs: new Map([['', newDir('')]]), seq: 0, res: new Map(), expiry: [] }),
 
-  step(s, tree, _c, delta, ctx) {
+  step(s, tree, c, delta, ctx) {
     const o = opts(ctx.options);
+    const now = c.index;
+    // Record a new ghost living in directory `dir` (re-checked when it expires).
+    const expires = (dir: string) => {
+      if (o.ghostTtl > 0) s.expiry.push([now + o.ghostTtl + 1, dir]);
+    };
     const touched = new Set<string>();
 
     // Per-directory id -> slot index, built lazily once per touched directory.
@@ -153,7 +183,8 @@ export const tombstone: Strategy<TombstoneState> = {
       const dir = dirname(e.path);
       const slot = slotOf(dir, e.id);
       if (!slot) continue;
-      toGhost(slot, e, e.path, `f:${e.id}`);
+      toGhost(slot, e, e.path, `f:${e.id}`, now);
+      expires(dir);
       idx.get(dir)!.delete(e.id);
       touched.add(dir);
     }
@@ -168,7 +199,8 @@ export const tombstone: Strategy<TombstoneState> = {
         continue;
       }
       if (slot) {
-        toGhost(slot, entry, from, `g:${s.seq++}`);
+        toGhost(slot, entry, from, `g:${s.seq++}`, now);
+        expires(od);
         idx.get(od)!.delete(entry.id);
         touched.add(od);
       }
@@ -206,7 +238,7 @@ export const tombstone: Strategy<TombstoneState> = {
       const dir = dirname(e.path);
       ensure(dir); // defensive: should already exist via dirsAdded
       const d = s.dirs.get(dir)!;
-      const slot: TSlot = { fid: e.id, path: e.path, ghost: false, gid: '', size: 0, born: 0, modified: 0 };
+      const slot: TSlot = { fid: e.id, path: e.path, ghost: false, died: 0, gid: '', size: 0, born: 0, modified: 0 };
       let i = -1;
       if (o.reuse) {
         let j = cursor.get(dir) ?? 0;
@@ -223,15 +255,33 @@ export const tombstone: Strategy<TombstoneState> = {
     // 5. Vanished directories become ghost platforms.
     for (const p of delta.dirsRemoved) {
       const d = s.dirs.get(p);
-      if (d) d.ghost = true;
+      if (d) {
+        d.ghost = true;
+        d.died = now;
+      }
       touched.add(dirname(p));
+      expires(dirname(p));
     }
 
-    // 6. Local compaction of live directories whose ghost fraction exceeds the ratio.
-    if (o.compactRatio < 1) {
+    // 6. Local compaction of live directories whose ghost fraction exceeds the ratio,
+    //    or (ghostTtl) whose oldest ghost has expired. Expired queue entries bring
+    //    their directory up for a check even if nothing else touched it.
+    //    Stale entries (ghost already reused/compacted) are harmless: the check
+    //    looks at the directory as it is now.
+    if (o.ghostTtl > 0) {
+      let k = 0;
+      while (k < s.expiry.length && s.expiry[k][0] <= now) touched.add(s.expiry[k++][1]);
+      if (k) s.expiry.splice(0, k);
+    }
+    if (o.compactRatio < 1 || o.ghostTtl > 0) {
       for (const p of [...touched].sort(cmp)) {
         const d = s.dirs.get(p);
-        if (d && !d.ghost && ghostFraction(d, s) > o.compactRatio) compact(s, d);
+        if (!d || d.ghost) continue;
+        if (
+          (o.compactRatio < 1 && ghostFraction(d, s) > o.compactRatio) ||
+          (o.ghostTtl > 0 && now - oldestGhost(d, s) > o.ghostTtl)
+        )
+          compact(s, d);
       }
     }
 
