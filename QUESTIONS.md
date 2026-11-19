@@ -128,3 +128,10 @@
 - **metro** spirals right, down, left, up from the lot (cell order (1,0), (1,1), (0,1), (-1,1), ...). The first
   big child (vue-core's `packages`) lands at (1,1) and dominates one quadrant, so the lot is not visually centred
   on big repos. Placing children by size (big ones further out) would centre better but breaks arrival order.
+
+## 3D ripgrep demo (bin/city3d.ts, src/render/city3d.html)
+- Height defaults to √size, with linear and log in a menu. Linear is literally "height = size", but ripgrep's
+  largest file (grep/src/data/sherlock.txt, 595 KB) is ~260× the median (~2 KB), so linear makes nearly every
+  building a flat tile. The scale is fixed over the whole history, so heights are comparable across commits.
+- Colour groups Rust crates the same before and after the 2020 move under crates/ (grep/ and crates/grep/ share
+  a colour). That rule is ripgrep-specific.
