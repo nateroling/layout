@@ -1,0 +1,12 @@
+{
+  "name": "git-layout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "fsn/fsv-style layouts of a git repo's history, with pluggable stability strategies",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "viz": "node bin/viz.ts",
+    "test": "node --test test/*.test.ts"
+  }
+}
