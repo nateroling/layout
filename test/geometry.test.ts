@@ -202,6 +202,10 @@ const own: Record<string, Options[]> = {
   ],
   city: [{}, { followRenames: false }],
   metro: [{}, { followRenames: false }],
+  'metro-pack': [{}, { followRenames: false }],
+  'metro-warp': [{}, { followRenames: false }],
+  'metro-hex': [{}, { followRenames: false }],
+  'metro-seams': [{}, { followRenames: false }],
   tombstone: [
     {},
     { reuse: false, compactRatio: 1 },
@@ -251,6 +255,10 @@ const fixtureOpts: Record<string, Options[]> = {
   slack: [{ growthMode: 'additive', hgap: 0, vgap: 0, pad: 0 }, { slack: 0, growth: 1.01, gridMode: 'fixed', gridCols: 2, align: 'center' }],
   city: [{ hgap: 0, pad: 0 }, {}],
   metro: [{ hgap: 0, pad: 0 }, {}],
+  'metro-pack': [{ hgap: 0, pad: 0 }, {}],
+  'metro-warp': [{ hgap: 0, pad: 0 }, {}],
+  'metro-hex': [{ hgap: 0, pad: 0 }, {}],
+  'metro-seams': [{ hgap: 0, pad: 0 }, {}],
   tombstone: [{ ghostTtl: 10, slack: 0.25, hgap: 0, vgap: 0, pad: 0 }, { reuse: false, compactRatio: 1, gridMode: 'fixed', gridCols: 1, align: 'center' }],
 };
 

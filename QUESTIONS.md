@@ -135,3 +135,24 @@
   building a flat tile. The scale is fixed over the whole history, so heights are comparable across commits.
 - Colour groups Rust crates the same before and after the 2020 move under crates/ (grep/ and crates/grep/ share
   a colour). That rule is ripgrep-specific.
+
+## Compact grids (metro-seams / hex / warp / pack)
+
+Results on the four public repos (2026-11-19, `sweep-square.json`): every new grid is denser than metro, and none is less stable.
+`metro-pack` is densest: mean compactness about 1.4-2x metro's (express 0.079 vs 0.038, vue-core 0.090 vs 0.051,
+ripgrep 0.090 vs 0.064); final bbox on express 52×57 vs metro's 147×82. Its stability is about the same or better (moved per
+tree change 3.2% vs 5.0% on express, 3.2% vs 4.1% on vue-core, 4.6% vs 4.3% on ripgrep) and its max jump is lower on the three
+big repos. Seams and warp come next; hex is in between.
+
+- **Root pinwheel** instead of metro's spiral: the four arms can't collide, but a growing root lot slides the bottom and left
+  arms sideways (along the lot), not only outward. Pinning the lot's centre would fix that but move the root's files.
+- **Arm choice** = the arm that keeps the root bbox's longer side smallest, then area, then the arm order right, bottom, left, top.
+  It looks only at the present (sizes at arrival), so a folder that later becomes huge can unbalance an arm.
+- **Positions are ratchets** (never move back toward the lot). So holes left by deleted subtrees stay empty until something
+  new fits there. That is most of the empty space left on vue-core after the packages renames. A periodic deliberate "re-plan"
+  would reclaim it.
+- **hex is brick bond**: platforms are rectangles, so true hexagons aren't possible; hex topology = staggered rows (six neighbours).
+  Its stagger is half the first cell of the row above, which shifts when that cell grows.
+- **warp** shoves (+x or +y, the shorter move); ties go to +x.
+- **pack** candidate order: longer side of the district, then area, then x+y, then y, then x. A newcomer is placed at its arrival
+  size (usually tiny), so it can land in a narrow slot and shove neighbours as it grows.

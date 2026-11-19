@@ -28,6 +28,27 @@ import { geoSchema } from '../geometry/treev.ts';
 import { cmp, dirname, groupTree } from '../model/tree.ts';
 import type { FileEntry, LayoutNode, OptionSchema, TreeState } from '../types.ts';
 
+/** A directory's file lot: slots keep their position; holes are reused, earliest first. */
+export interface Lot {
+  slots: (number | null)[]; // file id per lot slot, null = free
+  pcols: number; // lot columns (ratchet)
+}
+
+/** Gone files free their slot, new ones take the earliest free slot; columns = ceil(sqrt(slots)), never shrink. */
+export function syncSlots(d: Lot, files: FileEntry[]): void {
+  const ids = new Set(files.map((f) => f.id));
+  const have = new Set<number>();
+  d.slots = d.slots.map((x) => (x !== null && ids.has(x) ? (have.add(x), x) : null));
+  const arrivals = files.filter((f) => !have.has(f.id)).sort((a: FileEntry, b: FileEntry) => a.arrived - b.arrived || cmp(a.path, b.path));
+  let j = 0;
+  for (const f of arrivals) {
+    while (j < d.slots.length && d.slots[j] !== null) j++;
+    if (j < d.slots.length) d.slots[j] = f.id;
+    else d.slots.push(f.id);
+  }
+  d.pcols = Math.max(d.pcols, Math.ceil(Math.sqrt(Math.max(1, d.slots.length))));
+}
+
 interface CDir {
   slots: (number | null)[]; // file id per lot slot, null = free
   pcols: number; // lot columns (ratchet)
@@ -70,14 +91,14 @@ export function spiralCell(k: number): [number, number] {
   return spiral[k];
 }
 
-interface Geo {
+export interface Geo {
   cell: number;
   pad: number;
   hgap: number;
 }
-const geoOf = (o: Record<string, unknown>): Geo => ({ cell: Number(o.cell), pad: Number(o.pad), hgap: Number(o.hgap) });
+export const geoOf = (o: Record<string, unknown>): Geo => ({ cell: Number(o.cell), pad: Number(o.pad), hgap: Number(o.hgap) });
 
-const lotSize = (d: CDir, g: Geo) => {
+export const lotSize = (d: Lot, g: Geo) => {
   const n = Math.max(1, d.slots.length);
   return { w: d.pcols * g.cell, h: Math.ceil(n / d.pcols) * g.cell };
 };
@@ -91,7 +112,7 @@ const lotOffset = (d: CDir, g: Geo) => ({
 });
 
 const geo = geoSchema();
-const schema: OptionSchema = { cell: geo.cell, pad: geo.pad, hgap: { ...geo.hgap, doc: 'gap between columns and rows of a district' } };
+export const schema: OptionSchema = { cell: geo.cell, pad: geo.pad, hgap: { ...geo.hgap, doc: 'gap between columns and rows of a district' } };
 
 /** Where child cell k of directory `path` goes, as [col, row] (negative = left/up of the lot). */
 type CellFn = (s: CityState, path: string, k: number) => [number, number];
@@ -121,18 +142,7 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
           s.dirs.set(p, d);
         }
         // 2. File slots: gone files free their slot, new ones take the earliest free slot.
-        const files = fileKids.get(p) ?? [];
-        const ids = new Set(files.map((f) => f.id));
-        const have = new Set<number>();
-        d.slots = d.slots.map((x) => (x !== null && ids.has(x) ? (have.add(x), x) : null));
-        const arrivals = files.filter((f) => !have.has(f.id)).sort((a: FileEntry, b: FileEntry) => a.arrived - b.arrived || cmp(a.path, b.path));
-        let j = 0;
-        for (const f of arrivals) {
-          while (j < d.slots.length && d.slots[j] !== null) j++;
-          if (j < d.slots.length) d.slots[j] = f.id;
-          else d.slots.push(f.id);
-        }
-        d.pcols = Math.max(d.pcols, Math.ceil(Math.sqrt(Math.max(1, d.slots.length))));
+        syncSlots(d, fileKids.get(p) ?? []);
         // 3. Child cells: vanished children free theirs, new ones take the earliest free cell.
         const kids = dirKids.get(p) ?? [];
         const kidSet = new Set(kids);
@@ -276,4 +286,4 @@ export function ratchet(s: CityState, g: Geo, cellOf: CellFn): void {
   }
 }
 
-const depth = (p: string) => (p === '' ? 0 : p.split('/').length);
+export const depth = (p: string) => (p === '' ? 0 : p.split('/').length);

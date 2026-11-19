@@ -10,7 +10,7 @@
   "budgetMB": 4,
   "configs": [
     {
-      "label": "recompute birth · nested",
+      "label": "recompute birth \u00b7 nested",
       "strategy": "recompute",
       "options": {
         "order": "birth",
@@ -19,7 +19,7 @@
       }
     },
     {
-      "label": "recompute birth · spiral",
+      "label": "recompute birth \u00b7 spiral",
       "strategy": "recompute",
       "options": {
         "order": "birth",
@@ -28,21 +28,21 @@
       }
     },
     {
-      "label": "tombstone · nested",
+      "label": "tombstone \u00b7 nested",
       "strategy": "tombstone",
       "options": {
         "arrange": "nested"
       }
     },
     {
-      "label": "tombstone · spiral",
+      "label": "tombstone \u00b7 spiral",
       "strategy": "tombstone",
       "options": {
         "arrange": "spiral"
       }
     },
     {
-      "label": "tombstone keep · nested",
+      "label": "tombstone keep \u00b7 nested",
       "strategy": "tombstone",
       "options": {
         "compactRatio": 1,
@@ -50,7 +50,7 @@
       }
     },
     {
-      "label": "tombstone keep · spiral",
+      "label": "tombstone keep \u00b7 spiral",
       "strategy": "tombstone",
       "options": {
         "compactRatio": 1,
@@ -66,16 +66,47 @@
       "label": "metro",
       "strategy": "metro",
       "options": {}
+    },
+    {
+      "label": "metro-seams",
+      "strategy": "metro-seams",
+      "options": {}
+    },
+    {
+      "label": "metro-hex",
+      "strategy": "metro-hex",
+      "options": {}
+    },
+    {
+      "label": "metro-warp",
+      "strategy": "metro-warp",
+      "options": {}
+    },
+    {
+      "label": "metro-pack",
+      "strategy": "metro-pack",
+      "options": {}
     }
   ],
-  "title": "squarer arrangements",
-  "about": "<p><b>What this compares.</b> The four public repos from the stability report, each laid out by four squarish layouts on one slider. Pick a strategy group to change what nested and spiral run with; city and metro are their own strategies and appear in every group.</p>\n<ul>\n<li><b>nested</b>: Code City districts. A folder is a rectangle holding its file grid and its subfolders' rectangles, re-packed close to square on every commit.</li>\n<li><b>spiral</b>: every folder's subfolders coil around it in a square spiral, in order, re-computed on every commit. Wires follow the coil.</li>\n<li><b>city</b>: a stretchable nested grid. Each folder is a district on its own grid; its subfolders take cells around its file lot and keep them. Columns and rows only ever widen, so growth pushes what lies beyond it outward and nothing is re-packed. Holes left by deletions are reused; nothing shrinks. Grows right and down from the top-left corner.</li>\n<li><b>metro</b>: city grown from the centre. The file lot sits in the middle of its district and subfolders take cells on a square spiral around it, in all four directions. Columns and rows still only widen, and every push points away from the centre. The root's file lot is pinned at the origin.</li>\n</ul>\n<p>Strategies for nested and spiral: <b>recompute birth</b> (fresh each commit), <b>tombstone</b> (deleted files keep their slot until a folder is half empty), <b>tombstone keep</b> (holes are refilled, folders never shrink).</p>",
+  "title": "squarer arrangements and compact grids",
+  "about": "<p><b>What this compares.</b> The four public repos from the stability report, laid out by squarish layouts on one slider. Pick a strategy group to change what nested and spiral run with; city and metro are their own strategies and appear in every group.</p>\n<ul>\n<li><b>nested</b>: Code City districts. A folder is a rectangle holding its file grid and its subfolders' rectangles, re-packed close to square on every commit.</li>\n<li><b>spiral</b>: every folder's subfolders coil around it in a square spiral, in order, re-computed on every commit. Wires follow the coil.</li>\n<li><b>city</b>: a stretchable nested grid. Each folder is a district on its own grid; its subfolders take cells around its file lot and keep them. Columns and rows only ever widen, so growth pushes what lies beyond it outward and nothing is re-packed. Holes left by deletions are reused; nothing shrinks. Grows right and down from the top-left corner.</li>\n<li><b>metro</b>: city grown from the centre. The file lot sits in the middle of its district and subfolders take cells on a square spiral around it, in all four directions. Columns and rows still only widen, and every push points away from the centre. The root's file lot is pinned at the origin.</li>\n</ul>\n<p>Strategies for nested and spiral: <b>recompute birth</b> (fresh each commit), <b>tombstone</b> (deleted files keep their slot until a folder is half empty), <b>tombstone keep</b> (holes are refilled, folders never shrink).</p>\n<p><b>Compact grids</b> (first group).</p>\n<ul>\n<li><b>city</b>, <b>metro</b>: the current stretchable square grids. A column or row is as wide as the biggest thing it has ever held, across the whole district.</li>\n<li><b>metro-seams</b> (per-district seams): columns still share a width, but every column stacks its own cells with their own heights, like masonry. A tall folder only pushes its own column down.</li>\n<li><b>metro-hex</b>: brick-bond rows (the rectangle version of a hex grid: odd rows are staggered half a cell, six neighbours). Rows share a height, each row has its own widths; subfolders fill hex rings.</li>\n<li><b>metro-warp</b> (Townscaper-style irregular grid): every cell keeps its grid neighbours but has its own size, so seams bend around a big cell instead of running straight across.</li>\n<li><b>metro-pack</b> (skyline packer): no grid. A new folder takes the free spot that keeps its district smallest and squarest; when a block grows into a neighbour, the neighbour is shoved outward.</li>\n</ul>\n<p>The root of the four new ones is a pinwheel: the root's files sit at the origin and four arms run off its sides (right arm grows down, bottom grows left, left grows up, top grows right), so arms never collide. A new top-level folder joins whichever arm keeps the city smallest and squarest.</p>",
   "compare": [
+    {
+      "label": "compact grids: city/metro vs new grids",
+      "configs": [
+        "city",
+        "metro",
+        "metro-seams",
+        "metro-hex",
+        "metro-warp",
+        "metro-pack"
+      ]
+    },
     {
       "label": "strategy: recompute birth",
       "configs": [
-        "recompute birth · nested",
-        "recompute birth · spiral",
+        "recompute birth \u00b7 nested",
+        "recompute birth \u00b7 spiral",
         "city",
         "metro"
       ]
@@ -83,8 +114,8 @@
     {
       "label": "strategy: tombstone",
       "configs": [
-        "tombstone · nested",
-        "tombstone · spiral",
+        "tombstone \u00b7 nested",
+        "tombstone \u00b7 spiral",
         "city",
         "metro"
       ]
@@ -92,8 +123,8 @@
     {
       "label": "strategy: tombstone keep (never shrinks)",
       "configs": [
-        "tombstone keep · nested",
-        "tombstone keep · spiral",
+        "tombstone keep \u00b7 nested",
+        "tombstone keep \u00b7 spiral",
         "city",
         "metro"
       ]
