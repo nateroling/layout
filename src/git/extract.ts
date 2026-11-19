@@ -24,6 +24,31 @@ export function resolveRef(repo: string, ref = 'HEAD'): string {
   return git(repo, ['rev-parse', ref]).trim();
 }
 
+const ESC: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+
+/** Undo git's C-style path quoting (applied even with core.quotePath=false for " \ tab newline). */
+export function unquote(s: string): string {
+  if (!(s.length >= 2 && s.startsWith('"') && s.endsWith('"'))) return s;
+  const bytes: number[] = [];
+  const body = s.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== '\\') {
+      bytes.push(...Buffer.from(ch, 'utf8'));
+      continue;
+    }
+    const n = body[i + 1];
+    if (/[0-7]/.test(n)) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else {
+      bytes.push(ESC[n] ?? n.charCodeAt(0));
+      i += 1;
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
 interface RawChange {
   type: string;
   path: string;
@@ -39,6 +64,7 @@ export function extractHistory(repoPath: string, opts: { ref?: string; name?: st
     'log',
     head,
     '--first-parent',
+    '--root',
     '--reverse',
     '--diff-merges=first-parent',
     '-M',
@@ -59,13 +85,25 @@ export function extractHistory(repoPath: string, opts: { ref?: string; name?: st
       const meta = line.slice(1, tab).split(' ');
       const paths = line.slice(tab + 1).split('\t');
       const [srcMode, dstMode, , dstBlob, status] = meta;
-      const t = status[0];
-      // Skip submodules (gitlinks) entirely.
-      if (srcMode === '160000' || dstMode === '160000') continue;
+      let t = status[0];
+      const p = paths.map(unquote);
+      // Submodules (gitlinks) are not files. A file<->submodule type change is a delete/add.
+      const srcLink = srcMode === '160000';
+      const dstLink = dstMode === '160000';
+      if (srcLink && dstLink) continue;
+      if (dstLink) {
+        if (t === 'A') continue;
+        changes.push({ type: 'D', path: p[0], blob: dstBlob, mode: srcMode });
+        continue;
+      }
+      if (srcLink) {
+        if (t === 'D') continue;
+        t = 'A';
+      }
       if (t === 'R' || t === 'C') {
-        changes.push({ type: t, oldPath: paths[0], path: paths[1], blob: dstBlob, mode: dstMode });
+        changes.push({ type: t, oldPath: p[0], path: p[1], blob: dstBlob, mode: dstMode });
       } else {
-        changes.push({ type: t, path: paths[0], blob: dstBlob, mode: dstMode });
+        changes.push({ type: t, path: p.at(-1)!, blob: dstBlob, mode: dstMode });
       }
     }
     raw.push({ sha, time: Number(ct), author, subject, changes });
