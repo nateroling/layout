@@ -342,6 +342,9 @@ export function placeSpiral(root: LDir, g: GeoOptions, m: Map<string, Measured>)
     pushFiles(nodes, d, me, g, x + g.pad, y + g.pad, !!d.ghost);
     d.dirs.forEach((c, i) => rec(c, ox + b.kx[i], oy + b.ky[i], d.id, i > 0 ? d.dirs[i - 1].id : undefined));
   };
-  rec(root, 0, 0, null);
+  // Anchor the root platform at the origin: a turn added on the left or top must not shift
+  // the whole picture (that would count as every node moving).
+  const rb = blocks.get(root.id)!;
+  rec(root, -rb.px, -rb.py, null);
   return nodes;
 }
