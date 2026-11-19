@@ -1,9 +1,15 @@
 // Strategy registry. Add new strategies here.
 import type { Strategy } from '../engine.ts';
+import { hindsight } from './hindsight.ts';
 import { recompute } from './recompute.ts';
+import { slack } from './slack.ts';
+import { tombstone } from './tombstone.ts';
 
 export const strategies: Record<string, Strategy<any>> = {
   recompute,
+  hindsight,
+  slack,
+  tombstone,
 };
 
 export function getStrategy(name: string): Strategy<any> {
