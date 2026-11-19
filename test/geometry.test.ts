@@ -183,7 +183,14 @@ const geo: Options[] = [
 ];
 // Every arrangement, crossed with a subset of the geometry stressors (all of them would ×4 the run).
 const arranges: Options[] = [{}, { arrange: 'wrap' }, { arrange: 'nested' }, { arrange: 'radial' }, { arrange: 'spiral' }];
-const geoFor = (a: Options): Options[] => (Object.keys(a).length ? [geo[0], geo[2], geo[3]] : geo);
+// Strategies that arrange themselves (no `arrange` option, e.g. city) get one pass with the
+// geometry keys they accept.
+const arrangesFor = (name: string): Options[] => ('arrange' in strategies[name].schema ? arranges : [{}]);
+const geoFor = (a: Options, name: string): Options[] => {
+  const keys = Object.keys(strategies[name].schema);
+  const fit = (o: Options) => Object.fromEntries(Object.entries(o).filter(([k]) => keys.includes(k)));
+  return (Object.keys(a).length ? [geo[0], geo[2], geo[3]] : geo).map(fit);
+};
 const own: Record<string, Options[]> = {
   recompute: [{ order: 'name' }, { order: 'birth', followRenames: false }],
   hindsight: [{ showGhosts: true }, { showGhosts: true, order: 'name', followRenames: false }, { showGhosts: false }],
@@ -193,6 +200,7 @@ const own: Record<string, Options[]> = {
     { slack: 3, growth: 4, order: 'name' },
     { growthMode: 'additive', followRenames: false },
   ],
+  city: [{}, { followRenames: false }],
   tombstone: [
     {},
     { reuse: false, compactRatio: 1 },
@@ -212,7 +220,7 @@ test('geometry invariants: random histories × every strategy × aggressive opti
   let frames = 0;
   for (const name of Object.keys(strategies))
     for (const o of own[name] ?? [{}])
-      for (const a of arranges) for (const g of geoFor(a)) for (const h of hs) frames += checkGeometry(h, name, { ...o, ...g, ...a });
+      for (const a of arrangesFor(name)) for (const g of geoFor(a, name)) for (const h of hs) frames += checkGeometry(h, name, { ...o, ...g, ...a });
   assert.ok(frames > 10_000, `checked ${frames} frames`);
 });
 
@@ -240,6 +248,7 @@ const fixtureOpts: Record<string, Options[]> = {
   recompute: [{ order: 'name', align: 'center' }, { order: 'birth', hgap: 0, vgap: 0, pad: 0 }],
   hindsight: [{ showGhosts: true, hgap: 0, vgap: 0, pad: 0, align: 'center' }],
   slack: [{ growthMode: 'additive', hgap: 0, vgap: 0, pad: 0 }, { slack: 0, growth: 1.01, gridMode: 'fixed', gridCols: 2, align: 'center' }],
+  city: [{ hgap: 0, pad: 0 }, {}],
   tombstone: [{ ghostTtl: 10, slack: 0.25, hgap: 0, vgap: 0, pad: 0 }, { reuse: false, compactRatio: 1, gridMode: 'fixed', gridCols: 1, align: 'center' }],
 };
 
@@ -252,6 +261,6 @@ for (const f of fixtures.filter((x) => x.kind === 'synthetic')) {
     const stride = Math.max(1, Math.floor(h.commits.length / 25));
     for (const name of Object.keys(strategies))
       for (const o of fixtureOpts[name] ?? [{}])
-        for (const a of arranges) checkGeometry(h, name, { ...o, ...a }, (i) => i % stride === 0 || i === last);
+        for (const a of arrangesFor(name)) checkGeometry(h, name, { ...o, ...a }, (i) => i % stride === 0 || i === last);
   });
 }

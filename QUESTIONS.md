@@ -114,3 +114,14 @@
   single child hangs below like TreeV and chains stay vertical. Gaps: `vgap` between the box and a strip,
   `hgap` between blocks in a strip. Wires follow the coil as a chain (parent -> first child -> next
   sibling ...), straight centre to centre; a link between two big neighbouring blocks is long.
+
+## city (stretchable grid)
+
+- **Shell order** for child cells (around the file lot, down column s then back along row s) keeps districts about
+  square in cell count; actual widths come from the biggest block in each column, so one big child (vue-core's
+  `packages`) widens a whole column/row and leaves gaps beside its neighbours. Lower density is the price.
+- **Ratchets never shrink**, even after a big directory is deleted: the space stays as a hole until reused. A
+  periodic deliberate "re-plan" (one planned rearrangement) is not implemented.
+- **File lots** keep slots (holes reused, earliest first) but still reflow when their column count grows
+  (ceil(sqrt(slots))). A fixed lot width per directory would remove that.
+- **Child placement is top-left in its cell**, so it only moves when columns/rows before it widen.
