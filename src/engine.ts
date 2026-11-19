@@ -21,7 +21,6 @@ export interface Strategy<S = unknown> {
   description: string;
   usesFuture: boolean;
   defaults: Options;
-  /** Whether renames keep file identity. Read from options.followRenames by the engine. */
   init(ctx: StrategyContext): S;
   step(state: S, tree: TreeState, commit: Commit, delta: Delta, ctx: StrategyContext): void;
   frame(state: S, tree: TreeState, commit: Commit, ctx: StrategyContext): LayoutNode[];
@@ -43,6 +42,14 @@ export function parseOptionValue(v: string): string | number | boolean {
 interface Checkpoint<S> {
   index: number; // state is AFTER applying commit `index`
   tree: TreeState;
+  canon: TreeState | null; // rename-following tree, only when followRenames=false
+  state: S;
+}
+
+interface Cursor<S> {
+  index: number; // last applied commit, -1 = nothing applied
+  tree: TreeState;
+  canon: TreeState | null;
   state: S;
 }
 
@@ -66,45 +73,59 @@ export class Runner<S = unknown> {
     return this.ctx.options.followRenames !== false;
   }
 
-  private makeFrame(tree: TreeState, state: S, c: Commit): Frame {
-    const nodes = this.strategy.frame(state, tree, c, this.ctx);
+  private fresh(): Cursor<S> {
+    return { index: -1, tree: emptyTree(), canon: this.followRenames ? null : emptyTree(), state: this.strategy.init(this.ctx) };
+  }
+
+  private advance(cur: Cursor<S>) {
+    const i = cur.index + 1;
+    const c = this.history.commits[i];
+    const delta = applyCommit(cur.tree, c, this.followRenames);
+    if (cur.canon) applyCommit(cur.canon, c, true);
+    this.strategy.step(cur.state, cur.tree, c, delta, this.ctx);
+    cur.index = i;
+    if (i > this.builtTo && i % this.checkpointEvery === 0) {
+      this.checkpoints.push({ index: i, tree: structuredClone(cur.tree), canon: structuredClone(cur.canon), state: structuredClone(cur.state) });
+      this.builtTo = i;
+    }
+  }
+
+  /**
+   * Every live file node gets `cid`: its identity under rename-following, independent of the
+   * strategy's own followRenames option, so metrics compare like with like. Directories: cid = id.
+   */
+  private makeFrame(cur: Cursor<S>): Frame {
+    const c = this.history.commits[cur.index];
+    const nodes = this.strategy.frame(cur.state, cur.tree, c, this.ctx);
+    for (const n of nodes) {
+      if (n.ghost) continue;
+      if (n.kind === 'dir' || !cur.canon) n.cid = n.id;
+      else {
+        const e = cur.canon.files.get(n.path);
+        n.cid = e ? `f:${e.id}` : n.id;
+      }
+    }
     return { commit: c.index, sha: c.sha, time: c.time, strategy: this.strategy.name, nodes, bbox: bbox(nodes) };
   }
 
-  /** Replay every commit in [from, to], calling onFrame for each index for which want(i) is true. */
+  /** Replay every commit in [0, to], calling onFrame for each index for which want(i) is true. */
   run(onFrame: (f: Frame) => void, want: (i: number) => boolean = () => true, to = this.history.commits.length - 1) {
-    const tree = emptyTree();
-    const state = this.strategy.init(this.ctx);
-    for (let i = 0; i <= to; i++) {
-      const c = this.history.commits[i];
-      const delta = applyCommit(tree, c, this.followRenames);
-      this.strategy.step(state, tree, c, delta, this.ctx);
-      if (i > this.builtTo && i % this.checkpointEvery === 0) {
-        this.checkpoints.push({ index: i, tree: structuredClone(tree), state: structuredClone(state) });
-        this.builtTo = i;
-      }
-      if (want(i)) onFrame(this.makeFrame(tree, state, c));
+    const cur = this.fresh();
+    while (cur.index < to) {
+      this.advance(cur);
+      if (want(cur.index)) onFrame(this.makeFrame(cur));
     }
   }
 
-  /** Layout at commit index n: nearest checkpoint <= n, then a short replay. */
+  /** Layout at commit index n: resume from the nearest checkpoint <= n (building more as needed). */
   at(n: number): Frame {
-    if (n < 0 || n >= this.history.commits.length) throw new Error(`index ${n} out of range`);
+    if (!Number.isInteger(n) || n < 0 || n >= this.history.commits.length) throw new Error(`index ${n} out of range`);
     let cp: Checkpoint<S> | undefined;
     for (const c of this.checkpoints) if (c.index <= n && (!cp || c.index > cp.index)) cp = c;
-    // Build checkpoints lazily if we have never been this far.
-    if (!cp || (n - cp.index >= this.checkpointEvery && n > this.builtTo)) {
-      let out: Frame | undefined;
-      this.run((f) => (out = f), (i) => i === n, n);
-      return out!;
-    }
-    const tree = structuredClone(cp.tree);
-    const state = structuredClone(cp.state);
-    for (let i = cp.index + 1; i <= n; i++) {
-      const c = this.history.commits[i];
-      const delta = applyCommit(tree, c, this.followRenames);
-      this.strategy.step(state, tree, c, delta, this.ctx);
-    }
-    return this.makeFrame(tree, state, this.history.commits[n]);
+    const cur: Cursor<S> = cp
+      ? { index: cp.index, tree: structuredClone(cp.tree), canon: structuredClone(cp.canon), state: structuredClone(cp.state) }
+      : this.fresh();
+    while (cur.index < n) this.advance(cur);
+    return this.makeFrame(cur);
   }
 }
