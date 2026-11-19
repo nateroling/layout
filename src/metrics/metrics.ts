@@ -5,8 +5,13 @@
 // fixed-size histogram for percentiles and a fixed number of time buckets for
 // sparklines. Definitions follow SPEC.md "Metrics":
 //
-//   displacement  for nodes non-ghost in both frames (matched by id), Euclidean
-//                 distance between top-left corners, in layout units.
+//   displacement  for nodes non-ghost in both frames (matched by `cid ?? id`: the
+//                 Runner's rename-following identity, so configs with
+//                 followRenames=false still pay for a renamed file's jump),
+//                 Euclidean distance between top-left corners, in layout units.
+//   horizon       the same comparison between frames K commits apart (K in
+//                 HORIZONS), sampled at frames 0, K, 2K, ...: does the picture
+//                 you saw survive a gap, not just one commit.
 //   compactness   live file cells (non-ghost files x cell^2) / bbox area.
 //   order         fraction of adjacent sibling pairs not in codepoint name order.
 
@@ -158,6 +163,19 @@ export interface FrameStats {
   disorder: number; // orderBad / orderPairs (0 when no pairs)
 }
 
+/** Horizon comparison between the frames at ordinals jK and (j-1)K. */
+export interface HorizonSummary {
+  k: number; // gap in frames (= commits when every frame is pushed)
+  pairs: number; // comparisons made (with >= 1 survivor)
+  /** Mean over pairs of (nodes moved / nodes alive in both). */
+  meanMovedFrac: number;
+  /** Mean over pairs of the mean distance moved by nodes alive in both (layout units). */
+  meanShift: number;
+}
+
+/** Gaps (in commits) for the horizon metric. A K is reported only with >= 2 pairs (more than 2K frames). */
+export const HORIZONS = [100, 500];
+
 export interface RunSummary {
   frames: number;
   transitions: number;
@@ -182,6 +200,8 @@ export interface RunSummary {
    * edit content, so per-commit averages are diluted; these averages are over tree changes only.
    */
   structural: { steps: number; meanMovedFrac: number; meanStepMean: number };
+  /** Stability at a distance, one entry per K in HORIZONS that the run is long enough for. */
+  horizon: HorizonSummary[];
   finalLiveFiles: number;
   finalNodes: number;
   /** Bucketed per-transition series for sparklines (bucket = contiguous run of transitions). */
@@ -280,6 +300,8 @@ export class MetricsAccumulator {
   private structSteps = 0;
   private structMovedFrac = 0;
   private structMean = 0;
+  // horizon: per K, the last sample's positions and running sums
+  private hz = HORIZONS.map((k) => ({ k, prev: null as Map<string, Prev> | null, pairs: 0, sumFrac: 0, sumShift: 0 }));
   // series
   private totalFrames: number;
   private nb: number;
@@ -314,7 +336,31 @@ export class MetricsAccumulator {
     if (f.bbox.h > this.maxH) this.maxH = f.bbox.h;
 
     const cur = new Map<string, Prev>();
-    for (const n of f.nodes) if (!n.ghost) cur.set(n.id, { x: n.x, y: n.y, file: n.kind === 'file', path: n.path });
+    for (const n of f.nodes) if (!n.ghost) cur.set(n.cid ?? n.id, { x: n.x, y: n.y, file: n.kind === 'file', path: n.path });
+
+    const ordinal = this.frames - 1;
+    for (const h of this.hz) {
+      if (ordinal % h.k !== 0) continue;
+      if (h.prev) {
+        let c = 0, m = 0, sum = 0;
+        for (const [id, p] of cur) {
+          const q = h.prev.get(id);
+          if (!q) continue;
+          c++;
+          const d = Math.hypot(p.x - q.x, p.y - q.y);
+          if (d > EPS) {
+            m++;
+            sum += d;
+          }
+        }
+        if (c > 0) {
+          h.pairs++;
+          h.sumFrac += m / c;
+          h.sumShift += sum / c;
+        }
+      }
+      h.prev = cur; // cur is never mutated after this point
+    }
 
     let step: StepResult | null = null;
     if (this.prev) {
@@ -398,6 +444,7 @@ export class MetricsAccumulator {
         meanMovedFrac: this.structSteps ? this.structMovedFrac / this.structSteps : 0,
         meanStepMean: this.structSteps ? this.structMean / this.structSteps : 0,
       },
+      horizon: this.hz.filter((h) => h.pairs >= 2).map((h) => ({ k: h.k, pairs: h.pairs, meanMovedFrac: h.sumFrac / h.pairs, meanShift: h.sumShift / h.pairs })),
       finalLiveFiles: last?.liveFiles ?? 0,
       finalNodes: last?.nodes ?? 0,
       series,

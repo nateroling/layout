@@ -4,9 +4,12 @@
 //   node bin/sweep.ts                                  # every fixture in fixtures.json, every config in sweep.json
 //   node bin/sweep.ts --fixtures chalk --max-commits 200 --configs "fsn classic,slack"
 //   node bin/sweep.ts --jobs 1 --out out/quick
+//   node bin/sweep.ts --report-only --fixtures chalk,express --configs "fsn classic,slack"
 //
 // Each fixture runs in its own child process (at most --jobs at once, default 2),
 // which writes out/<report>/parts/<fixture>.json; the parent assembles the report.
+// metrics.json / metrics.csv hold no timings or dates (byte-reproducible); those go
+// to timings.json.
 
 import { fork } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadHistory } from '../src/git/extract.ts';
 import { COLUMNS } from '../src/report/columns.ts';
+import { HORIZONS } from '../src/metrics/metrics.ts';
 import { buildReport } from '../src/report/html.ts';
 import { runFixture, type FixtureInfo, type FixtureResult, type SweepConfig } from '../src/report/run.ts';
 
@@ -148,9 +152,10 @@ async function main(): Promise<void> {
     }),
   );
 
-  const results: FixtureResult[] = fixtures
+  let results: FixtureResult[] = fixtures
     .filter((f) => ok.has(f.name))
     .map((f) => JSON.parse(readFileSync(join(partsDir, `${f.name}.json`), 'utf8')) as FixtureResult);
+  if (values['report-only']) results = filterParts(results, fixtures);
   if (!results.length) throw new Error('no fixture produced results');
 
   const command = `node bin/sweep.ts ${process.argv.slice(2).join(' ')}`.trim();
@@ -158,19 +163,46 @@ async function main(): Promise<void> {
   writeFileSync(join(outDir, 'index.html'), rep.html);
   writeFileSync(join(outDir, 'metrics.json'), JSON.stringify(metricsJson(results, rep.levels), null, 1));
   writeFileSync(join(outDir, 'metrics.csv'), metricsCsv(results));
+  writeFileSync(join(outDir, 'timings.json'), JSON.stringify(timingsJson(results), null, 1));
   for (const n of rep.notes) console.error(`note: ${n}`);
   console.error(
     `report: ${join(outDir, 'index.html')} ${(rep.bytes.total / 1e6).toFixed(2)} MB (player data ${(rep.bytes.player / 1e6).toFixed(2)} MB, inline filmstrips ${(rep.bytes.film / 1e6).toFixed(2)} MB) in ${((Date.now() - t0) / 1000).toFixed(1)} s`,
   );
 }
 
-function metricsJson(results: FixtureResult[], levels: Record<string, number>) {
+/**
+ * --report-only: keep only the parts and configs asked for. Missing parts or configs are an
+ * error (a silent partial report would look like a complete one).
+ */
+function filterParts(results: FixtureResult[], fixtures: FixtureInfo[]): FixtureResult[] {
+  const missingParts = fixtures.filter((f) => !results.some((r) => r.name === f.name)).map((f) => f.name);
+  if (missingParts.length && values.fixtures) throw new Error(`--report-only: no part file for ${missingParts.join(', ')} in ${partsDir}; run the sweep for them first`);
+  for (const m of missingParts) console.warn(`--report-only: no part file for ${m}; left out`);
+  const want = list(values.configs);
+  if (!want) return results;
+  const unknown = want.filter((w) => !sweep.configs.some((c) => c.label === w));
+  if (unknown.length) throw new Error(`--report-only: unknown config(s) ${unknown.map((u) => `"${u}"`).join(', ')} (not in ${values.sweep})`);
+  return results.map((r) => {
+    const absent = want.filter((w) => !r.configs.some((c) => c.label === w) && !r.skipped.some((s) => s.label === w));
+    if (absent.length) throw new Error(`--report-only: part ${r.name} has no results for ${absent.map((a) => `"${a}"`).join(', ')}; rerun the sweep for it`);
+    return { ...r, configs: r.configs.filter((c) => want.includes(c.label)), skipped: r.skipped.filter((s) => want.includes(s.label)) };
+  });
+}
+
+function timingsJson(results: FixtureResult[]) {
   return {
     generated: new Date().toISOString(),
+    fixtures: results.map((f) => ({ name: f.name, ms: f.ms, configs: f.configs.map((c) => ({ label: c.label, ms: c.ms })) })),
+  };
+}
+
+function metricsJson(results: FixtureResult[], levels: Record<string, number>) {
+  return {
+    horizons: HORIZONS,
     fixtures: results.map((f) => ({
-      name: f.name, kind: f.kind, head: f.head, totalCommits: f.totalCommits, used: f.used, ms: f.ms, skipped: f.skipped,
+      name: f.name, kind: f.kind, head: f.head, totalCommits: f.totalCommits, used: f.used, skipped: f.skipped,
       configs: f.configs.map((c) => ({
-        label: c.label, strategy: c.strategy, options: c.options, ms: c.ms, playerLevel: levels[`${f.name}/${c.label}`] ?? 0,
+        label: c.label, strategy: c.strategy, options: c.options, playerLevel: levels[`${f.name}/${c.label}`] ?? 0,
         playerFrames: c.players.map((p) => p.frames.length), summary: c.summary,
       })),
     })),
@@ -195,14 +227,16 @@ function metricsCsv(results: FixtureResult[]): string {
     ['order_finalDisorder', (s) => s.order.finalDisorder],
     ['ghost_meanFileFrac', (s) => s.ghost.meanFileFrac],
     ['finalLiveFiles', (s) => s.finalLiveFiles],
+    ...HORIZONS.map((k): [string, (s: FixtureResult['configs'][number]['summary']) => number] => [`h${k}_pairs`, (s) => s.horizon?.find((h) => h.k === k)?.pairs ?? NaN]),
   ];
+  const n = (v: number) => (Number.isNaN(v) ? '' : String(+v.toPrecision(6)));
   const q = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const head = ['fixture', 'config', 'strategy', 'options', 'ms', ...COLUMNS.map((c) => c.key), ...extra.map((e) => e[0])];
+  const head = ['fixture', 'kind', 'config', 'strategy', 'options', ...COLUMNS.map((c) => c.key), ...extra.map((e) => e[0])];
   const rows = [head.join(',')];
   for (const f of results)
     for (const c of f.configs)
       rows.push(
-        [f.name, c.label, c.strategy, JSON.stringify(c.options), String(c.ms), ...COLUMNS.map((k) => String(+k.get(c.summary).toPrecision(6))), ...extra.map((e) => String(+e[1](c.summary).toPrecision(6)))]
+        [f.name, f.kind ?? '', c.label, c.strategy, JSON.stringify(c.options), ...COLUMNS.map((k) => n(k.get(c.summary))), ...extra.map((e) => n(e[1](c.summary)))]
           .map(q)
           .join(','),
       );

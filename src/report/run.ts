@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Runner, mergeOptions } from '../engine.ts';
 import { MetricsAccumulator, type RunSummary } from '../metrics/metrics.ts';
-import { movedIds, renderSvg, unionViewport, type Rect } from '../render/svg.ts';
+import { MOVE_TIERS, moveDistances, renderSvg, unionViewport, type Rect } from '../render/svg.ts';
 import { strategies } from '../strategies/index.ts';
 import type { Frame, History, Options } from '../types.ts';
 import { PlayerEncoder, StringTable, type PlayerData } from './encode.ts';
@@ -29,6 +29,7 @@ export interface FixtureInfo {
 export interface FilmFrame {
   meta: number; // index into FixtureResult.metas
   moved: number; // nodes moved since the previous filmstrip frame
+  far: number; // of those, moved >= the top MOVE_TIERS threshold
   liveFiles: number;
   svg: string; // inline SVG (no caption)
 }
@@ -131,9 +132,11 @@ export function runFixture(fx: FixtureInfo, history: History, configs: SweepConf
     const frames: FilmFrame[] = [];
     let prev: Frame | null = null;
     for (const f of film) {
-      const moved = movedIds(prev, f);
+      const moved = moveDistances(prev, f);
       const svg = renderSvg(f, { viewport, moved, width: null, titles: false, totalCommits: n });
-      frames.push({ meta: samplePos.get(f.commit)!, moved: moved.size, liveFiles: f.nodes.filter((x) => x.kind === 'file' && !x.ghost).length, svg });
+      let far = 0;
+      for (const d of moved.values()) if (d >= MOVE_TIERS[MOVE_TIERS.length - 1]) far++;
+      frames.push({ meta: samplePos.get(f.commit)!, moved: moved.size, far, liveFiles: f.nodes.filter((x) => x.kind === 'file' && !x.ghost).length, svg });
       if (o.svgDir) {
         const dir = join(o.svgDir, fx.name);
         mkdirSync(dir, { recursive: true });

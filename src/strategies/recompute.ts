@@ -4,10 +4,10 @@
 // EvoStreets-flavoured birth-order layout: new things append at the end, so
 // existing siblings never reorder, but a widening band still pushes neighbours.
 
-import type { Strategy } from '../engine.ts';
-import { geoFromOptions, measure, place, type LDir } from '../geometry/treev.ts';
+import { defaultsOf, type Strategy } from '../engine.ts';
+import { geoFromOptions, geoSchema, measure, place, type LDir } from '../geometry/treev.ts';
 import { cmp, groupTree } from '../model/tree.ts';
-import type { FileEntry, LayoutNode, TreeState } from '../types.ts';
+import type { FileEntry, LayoutNode, OptionSchema, TreeState } from '../types.ts';
 
 export type Order = 'name' | 'birth';
 
@@ -33,11 +33,17 @@ export function liveTree(t: TreeState, order: Order): LDir {
   return build('');
 }
 
+const schema: OptionSchema = {
+  order: { type: 'enum', values: ['name', 'birth'], default: 'name', doc: 'sibling order: by name, or by arrival in the directory' },
+  ...geoSchema({ align: 'center' }),
+};
+
 export const recompute: Strategy<null> = {
   name: 'recompute',
   description: 'Stateless: lay out the tree at commit N from scratch. order=name|birth, align=left|center, gridMode=sqrt|fixed.',
   usesFuture: false,
-  defaults: { order: 'name', align: 'center', gridMode: 'sqrt', gridCols: 8 },
+  schema,
+  defaults: defaultsOf(schema),
   init: () => null,
   step: () => {},
   frame(_s, tree, _c, ctx): LayoutNode[] {

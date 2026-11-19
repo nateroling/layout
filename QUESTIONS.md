@@ -58,9 +58,40 @@
 
 ## Report / metrics (sweep)
 
-- **Renames count as moves.** With `followRenames=true` a renamed file is one node that relocates, so it counts as displacement (hindsight's big max jumps on vue-core are renames). With `followRenames=false` a rename is delete + add and costs nothing, which flatters that config.
+- **Renames count as moves.** With `followRenames=true` a renamed file is one node that relocates, so it counts as displacement (hindsight's big max jumps on vue-core are renames). Metrics now match nodes by `cid` (rename-following identity set by the Runner), so `followRenames=false` pays for renames too (superseded the earlier "costs nothing" caveat).
 - **"Moved / tree change"** (share of surviving nodes that moved, averaged only over commits that add, delete or rename) is the headline stability number. Per-commit averages are diluted by content-only commits, which never move anything.
 - **Compactness is bbox-based**, so on very wide repos (vue-core is ~50:1) it mostly measures aspect ratio. Compare it within a repo, not across repos.
 - **Wide repos get stacked full-width filmstrips**, scaled per config, with a grey bar showing relative width; other repos use thumbnails at one shared scale.
 - **Name order is a taste metric.** Birth-order strategies violate it by design.
 - **Player/filmstrip "moved" highlights are cumulative** between sampled frames (about N/150 commits apart), so they overstate per-commit movement.
+
+## Report / metrics, second pass
+
+- **Survivors are matched by the Runner's `cid`** (rename-following identity) for every config. This
+  supersedes "renames count as moves … with followRenames=false a rename costs nothing": now it costs the
+  same as with followRenames=true. `tombstone no-renames` now scores close to `tombstone`. The player and
+  the filmstrip outlines use the same identity (live files are keyed by cid in the player encoding; a file
+  becoming a ghost is a remove + a new node there, which nothing visible depends on).
+- **Horizon = K in {100, 500}, sampled at frames 0, K, 2K, …**, each compared with the previous sample
+  (non-overlapping windows, not every i vs i-K: streaming needs only one stored frame per K). Reported only
+  with ≥ 2 pairs (history > 2K commits), so 500 exists only for express, ripgrep and vue-core; no
+  clamping of K to short histories (a clamped K would make "after 500" mean different things per repo).
+  The composite uses the horizon *share* (moved after K), not the shift.
+- **Composite stability** = mean of rank scores for moved / tree change, mean shift, p95 jump, and
+  horizon moved (averaged over available K). Dropped disruption (near-duplicate of mean shift). Shown
+  for public, synthetic and all repos; the all-repos table weights each repo equally, so the 5 synthetics
+  outweigh the 4 public repos. Alternative: weight by kind.
+- **"Moved" outlines are tiered by distance** (< 2 cells faint, 2–10 medium, ≥ 10 bright and thicker)
+  instead of a threshold, so small nudges stay visible but no longer swamp the picture; filmstrip captions
+  add "N far" (≥ 10 cells). Thresholds are in layout units, not relative to repo size — on vue-core
+  (~44 commits between samples) recompute still lights up most of the tree, which is accurate.
+- **Self-check checksum** = Σ over nodes of ((idx mod 997)+1)·(x + 3y + 5w + 7h + 11·ghost + 13) on the
+  x100-rounded values, taken from the source frames in the encoder; 5 evenly spaced frames per player
+  are verified in the browser.
+
+
+## Options / CLI
+
+- `compactRatio` is capped at 1 (1 = never compact); `ghostTtl` must be an integer.
+- Options are validated strictly: unknown keys and bad values are errors. Numbers may be given as plain decimal strings.
+- In `viz --at`, `#N` is an index; a bare string is always a sha prefix (4+ hex chars), never an index.

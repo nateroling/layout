@@ -8,7 +8,7 @@
 // right) sideways. Strategies differ only in how they build the LDir tree
 // (order, ghosts, empty slots) and in the hooks that reserve extra room.
 
-import type { LayoutNode } from '../types.ts';
+import type { LayoutNode, OptionSchema } from '../types.ts';
 
 export interface LFile {
   id: string;
@@ -38,6 +38,23 @@ export interface GeoOptions {
 }
 
 export const defaultGeo: GeoOptions = { cell: 1, pad: 0.5, hgap: 1, vgap: 2, align: 'left', gridMode: 'sqrt', gridCols: 8 };
+
+/**
+ * Option schema of the shared geometry, accepted by every strategy. `over` changes a default
+ * (e.g. recompute centres by default). Zero gaps/pad are allowed: neighbours may touch, never overlap.
+ */
+export function geoSchema(over: Partial<GeoOptions> = {}): OptionSchema {
+  const d = { ...defaultGeo, ...over };
+  return {
+    cell: { type: 'number', default: d.cell, min: 0, minExclusive: true, doc: 'file cell size (layout units)' },
+    pad: { type: 'number', default: d.pad, min: 0, doc: 'platform padding around its grid' },
+    hgap: { type: 'number', default: d.hgap, min: 0, doc: 'gap between sibling bands' },
+    vgap: { type: 'number', default: d.vgap, min: 0, doc: 'gap between a platform and its children row' },
+    align: { type: 'enum', values: ['left', 'center'], default: d.align, doc: 'platform/children position inside a band' },
+    gridMode: { type: 'enum', values: ['sqrt', 'fixed'], default: d.gridMode, doc: 'sqrt: ~square grids; fixed: gridCols columns' },
+    gridCols: { type: 'number', default: d.gridCols, min: 1, integer: true, doc: 'columns when gridMode=fixed' },
+  };
+}
 
 /** Hooks let a strategy reserve more room than strictly required. Each must return >= required. */
 export interface GeoHooks {

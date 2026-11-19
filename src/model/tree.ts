@@ -148,7 +148,27 @@ export function groupTree(t: TreeState): { dirKids: Map<string, string[]>; fileK
   return { dirKids, fileKids };
 }
 
-/** Deterministic codepoint comparison (no locale). */
+const SURROGATE = /[\ud800-\udfff]/;
+
+/**
+ * Deterministic Unicode codepoint comparison (no locale). JS `<` compares UTF-16 code units, which
+ * agrees with codepoint order except when an astral character (a surrogate pair, U+D800..DFFF units)
+ * meets a BMP character in U+E000..FFFF at the first difference. Fast path: no surrogates -> `<`.
+ */
 export function cmp(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  if (a === b) return 0;
+  if (!SURROGATE.test(a) && !SURROGATE.test(b)) return a < b ? -1 : 1;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a.charCodeAt(i);
+    const y = b.charCodeAt(i);
+    if (x === y) continue;
+    if (x >= 0xd800 && y >= 0xd800) {
+      const sx = x <= 0xdfff;
+      const sy = y <= 0xdfff;
+      if (sx !== sy) return sx ? 1 : -1; // the surrogate (astral codepoint) sorts after U+E000..FFFF
+    }
+    return x < y ? -1 : 1;
+  }
+  return a.length < b.length ? -1 : 1;
 }

@@ -12,6 +12,15 @@
 //   x,y,w,h := zigzag delta of round(v*100) vs the node's previous value (0 when new)
 //   flags   := 1 = ghost;  modified := zigzag delta;  sizeBucket, pathIdx := raw
 //
+// Node identity: directories by id; live files by `cid` (the Runner's rename-following
+// identity, so a renamed file is one node even under followRenames=false, matching the
+// metrics); ghost files by id in a separate key space (cids and strategy ids can collide).
+// A file that becomes a ghost is therefore a remove + a new node; nothing tracks motion of
+// ghosts anyway.
+//
+// Each frame also gets a checksum of its rounded geometry (frameChecksum), computed from
+// the source frame at encode time, so the report can verify decoded positions.
+//
 // The decoder functions below are plain JS once types are stripped; the report
 // embeds them with Function.prototype.toString(), so the tests exercise the
 // exact code that runs in the browser.
@@ -65,6 +74,16 @@ export interface PlayerData {
   dirParent: number[]; // per node: parent node idx for dirs, -1 otherwise
   data: string; // base64 varint stream
   bytes: number; // raw byte length (before base64)
+  sums: number[]; // per frame: frameChecksum of the encoded geometry
+}
+
+/**
+ * Checksum of one frame's geometry over node index i with the x100-rounded fields
+ * x, y, w, h and the ghost flag. Weighted by (i mod 997)+1 so that swapped nodes or
+ * fields change the sum; stays well below 2^53 for any realistic frame.
+ */
+export function pdSumTerm(i: number, x: number, y: number, w: number, h: number, ghost: number): number {
+  return ((i % 997) + 1) * (x + 3 * y + 5 * w + 7 * h + 11 * ghost + 13);
 }
 
 export class PlayerEncoder {
@@ -76,6 +95,7 @@ export class PlayerEncoder {
   private prev = new Map<number, number[]>(); // node idx -> field values in the previous frame
   private out = new Bytes();
   private frames: number[] = [];
+  private sums: number[] = [];
 
   constructor(strings: StringTable) {
     this.strings = strings;
@@ -96,8 +116,10 @@ export class PlayerEncoder {
   add(f: Frame, metaIndex: number): void {
     this.frames.push(metaIndex);
     const cur = new Map<number, number[]>();
+    let sum = 0;
     for (const n of f.nodes) {
-      const i = this.nodeIndex(n.id, n.kind, n.path, n.parent);
+      const key = n.kind === 'dir' ? n.id : n.ghost ? `ghost ${n.id}` : `live ${n.cid ?? n.id}`;
+      const i = this.nodeIndex(key, n.kind, n.path, n.parent);
       const v = [
         Math.round(n.x * 100),
         Math.round(n.y * 100),
@@ -109,7 +131,9 @@ export class PlayerEncoder {
         n.kind === 'file' ? this.strings.id(n.path) : 0,
       ];
       cur.set(i, v);
+      sum += pdSumTerm(i, v[0], v[1], v[2], v[3], v[4]);
     }
+    this.sums.push(sum);
     const removed: number[] = [];
     for (const i of this.prev.keys()) if (!cur.has(i)) removed.push(i);
     removed.sort((a, b) => a - b);
@@ -157,6 +181,7 @@ export class PlayerEncoder {
       dirParent: this.dirParent,
       data: Buffer.from(raw).toString('base64'),
       bytes: raw.length,
+      sums: this.sums,
     };
   }
 }
@@ -201,8 +226,11 @@ export function pdCopy(s: PdState): PdState {
   return { n: s.n, live: s.live.slice(), f: f };
 }
 
-/** Apply one frame's delta. `moved` receives node idx that existed, are non-ghost, and changed x/y. */
-export function pdFrame(r: PdReader, s: PdState, moved: number[] | null): void {
+/**
+ * Apply one frame's delta. `moved` receives node idx that existed, are non-ghost, and changed
+ * x/y; `dist` (optional) receives each such node's move distance in layout units, in step.
+ */
+export function pdFrame(r: PdReader, s: PdState, moved: number[] | null, dist?: number[] | null): void {
   const zzf = [1, 1, 1, 1, 0, 1, 0, 0];
   let nr = pdVar(r), i = 0;
   while (nr-- > 0) {
@@ -216,6 +244,7 @@ export function pdFrame(r: PdReader, s: PdState, moved: number[] | null): void {
     i += pdVar(r);
     const mask = pdVar(r);
     const was = s.live[i] && !(s.f[4][i] & 1);
+    const ox = s.f[0][i], oy = s.f[1][i];
     if (!s.live[i]) for (let k = 0; k < 8; k++) s.f[k][i] = 0;
     for (let k = 0; k < 8; k++) {
       if (!(mask & (1 << k))) continue;
@@ -223,7 +252,10 @@ export function pdFrame(r: PdReader, s: PdState, moved: number[] | null): void {
       else s.f[k][i] = pdVar(r);
     }
     s.live[i] = 1;
-    if (moved && was && mask & 3 && !(s.f[4][i] & 1)) moved.push(i);
+    if (moved && was && mask & 3 && !(s.f[4][i] & 1)) {
+      moved.push(i);
+      if (dist) dist.push(Math.hypot(s.f[0][i] - ox, s.f[1][i] - oy) / 100);
+    }
   }
 }
 
@@ -234,7 +266,14 @@ export function b64bytes(s: string): Uint8Array {
   return out;
 }
 
+/** frameChecksum of a decoded state (must equal the encoder's sum for that frame). */
+export function pdChecksum(s: PdState): number {
+  let sum = 0;
+  for (let i = 0; i < s.n; i++) if (s.live[i]) sum += pdSumTerm(i, s.f[0][i], s.f[1][i], s.f[2][i], s.f[3][i], s.f[4][i] & 1);
+  return sum;
+}
+
 /** Source of the decoder for embedding in a <script>. */
 export function decoderSource(): string {
-  return [pdVar, pdZz, pdNew, pdCopy, pdFrame, b64bytes].map((fn) => fn.toString()).join('\n');
+  return [pdVar, pdZz, pdNew, pdCopy, pdFrame, pdSumTerm, pdChecksum, b64bytes].map((fn) => fn.toString()).join('\n');
 }

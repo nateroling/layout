@@ -25,11 +25,11 @@
 // never reused by the tree, so no collision); ghost left behind by a cross-dir
 // move `g:<seq>` (the identity lives on elsewhere); directories `d:<path>`.
 
-import type { Strategy } from '../engine.ts';
-import { geoFromOptions, measure, place, type LDir, type LFile } from '../geometry/treev.ts';
+import { defaultsOf, type Strategy } from '../engine.ts';
+import { geoFromOptions, geoSchema, measure, place, type LDir, type LFile } from '../geometry/treev.ts';
 import { cmp, dirname } from '../model/tree.ts';
-import type { FileEntry, LayoutNode, Options, TreeState } from '../types.ts';
-import { fixedHooks, reserveOptions, updateReservations, type Reservations, type ReserveOptions } from './reserve.ts';
+import type { FileEntry, LayoutNode, OptionSchema, Options, TreeState } from '../types.ts';
+import { fixedHooks, reserveOptions, reserveSchema, updateReservations, type Reservations, type ReserveOptions } from './reserve.ts';
 
 export interface TSlot {
   fid: number; // file id (live) or id of the file that left it (ghost)
@@ -144,12 +144,21 @@ export function buildLDir(s: TombstoneState, tree: TreeState): LDir {
   return rec(s.dirs.get('')!);
 }
 
+const schema: OptionSchema = {
+  reuse: { type: 'boolean', default: true, doc: 'new files infill the earliest ghost slot; a returning dir revives in place' },
+  compactRatio: { type: 'number', default: 0.5, min: 0, max: 1, doc: 'compact a dir whose ghost fraction exceeds this (1 = never)' },
+  ghostTtl: { type: 'number', default: 0, min: 0, integer: true, doc: 'commits a ghost survives before its dir compacts (0 = forever)' },
+  ...reserveSchema({ slack: 0 }),
+  ...geoSchema(),
+};
+
 export const tombstone: Strategy<TombstoneState> = {
   name: 'tombstone',
   description:
     'Online: persistent per-directory slots in arrival order; deletions leave ghosts. reuse (infill earliest ghost), compactRatio (local compaction; 1 = never), ghostTtl (commits; 0 = forever), slack/growth/growthMode reservations.',
   usesFuture: false,
-  defaults: { reuse: true, compactRatio: 0.5, ghostTtl: 0, slack: 0, growth: 1.5, growthMode: 'multiply', align: 'left', gridMode: 'sqrt', gridCols: 8 },
+  schema,
+  defaults: defaultsOf(schema),
   init: () => ({ dirs: new Map([['', newDir('')]]), seq: 0, res: new Map(), expiry: [] }),
 
   step(s, tree, c, delta, ctx) {

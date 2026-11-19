@@ -6,8 +6,9 @@
 
 import { COLUMNS, SCORE_GROUPS, column, normRanks } from './columns.ts';
 import { decoderSource } from './encode.ts';
-import { LEVELS, type ConfigResult, type FixtureResult } from './run.ts';
-import { FILE_COLOURS, PALETTE, RECENCY_BUCKETS, SIZE_BUCKETS, recencyBucket } from '../render/svg.ts';
+import { LEVELS, evenly, type ConfigResult, type FixtureResult } from './run.ts';
+import { FILE_COLOURS, MOVE_COLOURS, MOVE_TIERS, MOVE_WIDTHS, PALETTE, RECENCY_BUCKETS, SIZE_BUCKETS, recencyBucket } from '../render/svg.ts';
+import { HORIZONS } from '../metrics/metrics.ts';
 
 export interface ReportOptions {
   budgetBytes: number;
@@ -104,24 +105,38 @@ function legend(): string {
 <div><b>lightness = size</b> ${size}</div>
 <div><span class="sw">${sw(PALETTE.platform, `stroke="${PALETTE.platformEdge}"`)}<small>directory platform</small></span>
 <span class="sw">${sw('none', `stroke="${PALETTE.ghost}" stroke-dasharray="2 1.5"`)}<small>ghost (deleted, slot kept)</small></span>
-<span class="sw">${sw('none', `stroke="${PALETTE.moved}" stroke-width="2"`)}<small>moved since previous frame shown</small></span></div>
+</div>
+<div><b>outline = moved since the previous frame shown</b> ${MOVE_COLOURS.map((c, t) => `<span class="sw">${sw('none', `stroke="${c}" stroke-width="${MOVE_WIDTHS[t] * 1.6}"`)}<small>${moveTierText(t)}</small></span>`).join('')}</div>
 </div>`;
+}
+
+/** "< 2 cells", "2–10 cells", "≥ 10 cells" */
+function moveTierText(t: number): string {
+  if (t === 0) return `< ${MOVE_TIERS[0]} cells`;
+  if (t === MOVE_TIERS.length) return `≥ ${MOVE_TIERS[t - 1]} cells`;
+  return `${MOVE_TIERS[t - 1]}–${MOVE_TIERS[t]} cells`;
 }
 
 function intro(): string {
   const items = COLUMNS.map((c) => `<dt>${esc(c.label)}${c.better ? ` <span class="dir">${c.better === 'low' ? 'lower is better' : 'higher is better'}</span>` : ''}</dt><dd>${esc(c.help)}</dd>`).join('');
   return `<section id="about">
-<p>Each repo's file tree is drawn fsn-style from above: a directory is a <b>platform</b> with its files in a grid; subdirectories hang in the row below, joined by wires. A <b>layout strategy</b> decides where things go as the repo evolves commit by commit (first-parent history). This report replays every commit of each repo under each strategy and asks three things:</p>
+<p>Each repo's file tree is drawn fsn-style from above: a directory is a <b>platform</b> with its files in a grid; subdirectories hang in the row below, joined by wires. A <b>layout strategy</b> decides where things go as the repo evolves commit by commit (first-parent history). This report replays every commit of each repo under each strategy and asks:</p>
 <ul>
-<li><b>Stability</b> — when you come back after N commits, is everything where you left it? Measured on nodes that exist in both of two consecutive commits: how many moved, and how far.</li>
+<li><b>Smoothness</b> (consecutive commits) — when you play the history as an animation, how much jumps around from one commit to the next? Measured on nodes that exist in both of two consecutive commits: how many moved, how far on average, how far at worst. Most commits only edit files, so the headline is <i>moved / tree change</i>, averaged over commits that add, delete or rename something.</li>
+<li><b>Horizon</b> (${HORIZONS.join(' and ')} commits apart) — come back after a gap: is what you remember still where you left it? Frames ${HORIZONS[0]} commits apart (0 vs ${HORIZONS[0]}, ${HORIZONS[0]} vs ${2 * HORIZONS[0]}, …) are compared directly. Small per-commit nudges that never undo themselves add up here; a strategy can be smooth and still lose your mental map.</li>
 <li><b>Compactness</b> — how much of the picture is actual files rather than empty space and reserved slots.</li>
 <li><b>Name order</b> — how alphabetical siblings still are (a findability/taste trade-off, not a goal).</li>
 </ul>
-<p>Stability and compactness pull against each other: leaving room so nothing has to move costs space. The scatter plots show where each strategy lands on that trade-off.</p>
+<p>Survivors are matched by file identity under git's rename detection, for every config: a renamed file that jumps counts as a move even when the strategy itself treats the rename as delete + add. Stability and compactness pull against each other: leaving room so nothing has to move costs space. The scatter plots show where each strategy lands on that trade-off.</p>
 <details><summary>Metric definitions</summary><dl class="defs">${items}
-<dt>score (summary)</dt><dd>Per repo, configs are ranked on each metric; the rank is normalized to 0 (worst) … 100 (best) and averaged across repos. Stability = mean of moved / tree change, mean shift, disruption and p95 jump.</dd></dl></details>
+<dt>score (summary)</dt><dd>${esc(scoreDefinition())}</dd></dl></details>
 ${legend()}
 </section>`;
+}
+
+function scoreDefinition(): string {
+  const st = SCORE_GROUPS[0];
+  return `Per repo, configs are ranked on each ingredient; the rank is normalized to 100 (best config on that repo) … 0 (worst), and a group is the mean of its ingredients. Group scores are then averaged over repos. ${st.label[0].toUpperCase() + st.label.slice(1)} = mean of ${st.ingredients.map((i) => i.label).join(', ')}${st.ingredients.some((i) => i.cols.length > 1) ? ' (the horizon ingredient averages whichever horizons the repo is long enough for)' : ''}. Disruption and shift after K are left out: they measure distance again, like mean shift.`;
 }
 
 function scoreboard(f: FixtureResult): string {
@@ -130,7 +145,8 @@ function scoreboard(f: FixtureResult): string {
   const best = new Map<string, number>();
   for (const col of COLUMNS) {
     if (!col.better) continue;
-    const vals = cs.map((c) => col.get(c.summary));
+    const vals = cs.map((c) => col.get(c.summary)).filter((v) => !Number.isNaN(v));
+    if (!vals.length) continue;
     const b = col.better === 'low' ? Math.min(...vals) : Math.max(...vals);
     const w = col.better === 'low' ? Math.max(...vals) : Math.min(...vals);
     if (b !== w) best.set(col.key, b);
@@ -140,7 +156,7 @@ function scoreboard(f: FixtureResult): string {
     const tds = COLUMNS.map((col) => {
       const v = col.get(c.summary);
       const isBest = best.has(col.key) && Math.abs(v - best.get(col.key)!) <= 1e-12 * Math.max(1, Math.abs(v));
-      return `<td data-v="${v}"${isBest ? ' class="best"' : ''}>${esc(col.fmt(v, c.summary))}</td>`;
+      return `<td data-v="${Number.isNaN(v) ? '' : v}"${isBest ? ' class="best"' : ''}>${esc(col.fmt(v, c.summary))}</td>`;
     }).join('');
     return `<tr><th class="lbl" data-v="${esc(c.label)}"><span class="dot" style="background:${familyColour(c.strategy)}"></span>${esc(c.label)}</th>${tds}<td data-v="${c.ms}" class="muted">${(c.ms / 1000).toFixed(1)}s</td></tr>`;
   }).join('');
@@ -262,7 +278,8 @@ function filmstrips(f: FixtureResult, fi: number, canvas: boolean): string {
       const pic = canvas
         ? `<canvas class="fc" data-fc="${fi},${ci},${fr.meta}" style="${style};aspect-ratio:${r2(1 / aspect)}"></canvas>`
         : fr.svg.replace('<svg ', `<svg style="${style}" `);
-      const cap = `#${m[0]} · ${date(m[1])}${stacked ? ' · ' : '<br>'}${k ? `<span class="${fr.moved ? 'mv' : ''}">${fr.moved} moved</span>` : 'start'}`;
+      const far = fr.far ?? 0;
+      const cap = `#${m[0]} · ${date(m[1])}${stacked ? ' · ' : '<br>'}${k ? `<span class="${far ? 'mv' : ''}" title="${far} moved ≥ ${MOVE_TIERS[MOVE_TIERS.length - 1]} cells">${fr.moved} moved${far ? ` · ${far} far` : ''}</span>` : 'start'}`;
       return stacked ? `<figure><figcaption>${cap}</figcaption>${pic}</figure>` : `<figure${figStyle}>${pic}<figcaption>${cap}</figcaption></figure>`;
     }).join('');
     return `<div class="film" id="film-${fi}-${ci}">
@@ -274,34 +291,83 @@ ${stacked ? `<span class="rel" title="stacked filmstrips are scaled to fill the 
   }).join('');
 }
 
-function summaryTable(fixtures: FixtureResult[]): string {
-  // per config label: per group, list of per-fixture scores
+interface ScoreRow {
+  label: string;
+  strategy: string;
+  repos: number;
+  groups: number[]; // per SCORE_GROUPS entry, mean over repos (NaN = never available)
+  ingredients: number[]; // per stability ingredient, mean over repos
+}
+
+const meanOf = (a: number[]) => {
+  const v = a.filter((x) => !Number.isNaN(x));
+  return v.length ? v.reduce((s, x) => s + x, 0) / v.length : NaN;
+};
+
+/** Cross-repo composite scores (see SCORE_GROUPS and scoreDefinition). Sorted by the first group. */
+export function crossRepoScores(fixtures: FixtureResult[]): ScoreRow[] {
   const labels: string[] = [];
   const strat = new Map<string, string>();
   for (const f of fixtures) for (const c of f.configs) if (!strat.has(c.label)) {
     labels.push(c.label);
     strat.set(c.label, c.strategy);
   }
-  if (!labels.length) return '';
-  const cols = [...new Set(SCORE_GROUPS.flatMap((g) => g.cols))];
-  const colScores = new Map<string, Map<string, number[]>>(); // col -> label -> scores
-  for (const k of cols) colScores.set(k, new Map(labels.map((l) => [l, []])));
+  const stab = SCORE_GROUPS[0];
+  // label -> per group / per stability ingredient: list of per-repo scores
+  const acc = new Map(labels.map((l) => [l, { repos: 0, groups: SCORE_GROUPS.map(() => [] as number[]), ingr: stab.ingredients.map(() => [] as number[]) }]));
   for (const f of fixtures) {
+    const colScore = new Map<string, number[]>();
+    const cols = [...new Set(SCORE_GROUPS.flatMap((g) => g.ingredients.flatMap((i) => i.cols)))];
     for (const k of cols) {
       const col = column(k);
-      const ranks = normRanks(f.configs.map((c) => col.get(c.summary)), col.better as 'low' | 'high');
-      f.configs.forEach((c, i) => colScores.get(k)!.get(c.label)!.push(100 * (1 - ranks[i])));
+      colScore.set(k, normRanks(f.configs.map((c) => col.get(c.summary)), col.better as 'low' | 'high').map((r) => 100 * (1 - r)));
     }
+    f.configs.forEach((c, ci) => {
+      const a = acc.get(c.label)!;
+      a.repos++;
+      SCORE_GROUPS.forEach((g, gi) => {
+        const ing = g.ingredients.map((i) => meanOf(i.cols.map((k) => colScore.get(k)![ci])));
+        a.groups[gi].push(meanOf(ing));
+        if (gi === 0) ing.forEach((v, ii) => a.ingr[ii].push(v));
+      });
+    });
   }
-  const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : NaN);
-  const groupScore = (g: (typeof SCORE_GROUPS)[number], l: string) => mean(g.cols.map((k) => mean(colScores.get(k)!.get(l)!)));
-  const nfx = (l: string) => colScores.get(cols[0])!.get(l)!.length;
-  const cell = (v: number) => (Number.isNaN(v) ? '<td>–</td>' : `<td data-v="${r2(v)}" style="--s:${r2(v / 100)}" class="heat">${Math.round(v)}</td>`);
-  const head = `<tr><th class="lbl">config</th>${SCORE_GROUPS.map((g) => `<th>${esc(g.label)}<i>↑</i></th>`).join('')}${cols.map((k) => `<th class="sub">${esc(column(k).label)}</th>`).join('')}<th>repos</th></tr>`;
-  const sorted = [...labels].sort((a, b) => groupScore(SCORE_GROUPS[0], b) - groupScore(SCORE_GROUPS[0], a));
-  const rows = sorted.map((l) => `<tr><th class="lbl" data-v="${esc(l)}"><span class="dot" style="background:${familyColour(strat.get(l)!)}"></span>${esc(l)}</th>${SCORE_GROUPS.map((g) => cell(groupScore(g, l))).join('')}${cols.map((k) => cell(mean(colScores.get(k)!.get(l)!))).join('')}<td data-v="${nfx(l)}">${nfx(l)}</td></tr>`).join('');
-  return `<div class="tw"><table class="sb sortable sum"><thead>${head}</thead><tbody>${rows}</tbody></table></div>
-<p class="muted small">Scores are normalized ranks among the configs that ran on each repo (100 = best on every repo, 0 = worst), then averaged over repos. Ranks hide magnitudes — check the per-repo tables.</p>`;
+  return labels
+    .map((l) => {
+      const a = acc.get(l)!;
+      return { label: l, strategy: strat.get(l)!, repos: a.repos, groups: a.groups.map(meanOf), ingredients: a.ingr.map(meanOf) };
+    })
+    .sort((x, y) => (Number.isNaN(y.groups[0]) ? -1 : y.groups[0]) - (Number.isNaN(x.groups[0]) ? -1 : x.groups[0]) || (x.label < y.label ? -1 : 1));
+}
+
+function summaryTable(fixtures: FixtureResult[]): string {
+  const rows = crossRepoScores(fixtures);
+  if (!rows.length) return '';
+  const stab = SCORE_GROUPS[0];
+  const cell = (v: number) => (Number.isNaN(v) ? '<td data-v="">–</td>' : `<td data-v="${r2(v)}" style="--s:${r2(v / 100)}" class="heat">${Math.round(v)}</td>`);
+  const head = `<tr><th class="lbl">config</th>${SCORE_GROUPS.map((g) => `<th>${esc(g.label)}<i>↑</i></th>`).join('')}${stab.ingredients.map((i) => `<th class="sub" title="${esc(stab.label)} ingredient">${esc(i.label)}</th>`).join('')}<th>repos</th></tr>`;
+  const body = rows.map((r, i) => `<tr><th class="lbl" data-v="${esc(r.label)}"><span class="rk">${i + 1}</span><span class="dot" style="background:${familyColour(r.strategy)}"></span>${esc(r.label)}</th>${r.groups.map(cell).join('')}${r.ingredients.map(cell).join('')}<td data-v="${r.repos}">${r.repos}</td></tr>`).join('');
+  return `<div class="tw"><table class="sb sortable sum"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+const KIND_TITLES: Record<string, string> = { public: 'Public repos', synthetic: 'Synthetic repos' };
+
+/** Rankings per fixture kind (public, synthetic, …) and combined. */
+function summarySection(fixtures: FixtureResult[]): string {
+  const kinds = [...new Set(fixtures.map((f) => f.kind ?? 'other'))].sort((a, b) => (a === 'public' ? -1 : b === 'public' ? 1 : a < b ? -1 : a > b ? 1 : 0));
+  const parts: { title: string; note: string; fx: FixtureResult[] }[] = kinds.map((k) => {
+    const fx = fixtures.filter((f) => (f.kind ?? 'other') === k);
+    const note = k === 'synthetic'
+      ? 'Generated stress repos, each built to break one kind of strategy (explosion, mass move, churn, alphabet adversary, deep nesting). Adversarial by design: read as "where does it fail", not as typical behaviour.'
+      : k === 'public' ? 'Real histories: the ranking that says what to expect in practice.' : '';
+    return { title: KIND_TITLES[k] ?? `${k} repos`, note, fx };
+  });
+  if (kinds.length > 1) parts.push({ title: 'All repos', note: 'Public and synthetic together, each repo weighted equally (so synthetics dominate by count).', fx: fixtures });
+  const blocks = parts.map((p) => `<h3>${esc(p.title)} <small class="muted">(${p.fx.length}: ${p.fx.map((f) => esc(f.name)).join(', ')})</small></h3>
+${p.note ? `<p class="muted small">${esc(p.note)}</p>` : ''}
+${summaryTable(p.fx)}`).join('\n');
+  return `<p class="small">${esc(scoreDefinition())} Ranks hide magnitudes — check the per-repo tables.</p>
+${blocks}`;
 }
 
 // ---------- client ----------
@@ -374,16 +440,23 @@ function client(): void {
     const sn = P.snaps[Math.floor(i / SNAP)];
     const st = pdCopy(sn.s);
     const r = { b: P.bytes, p: sn.p };
-    let moved: number[] = [];
+    let moved: number[] = [], dist: number[] = [];
     for (let j = Math.floor(i / SNAP) * SNAP; j <= i; j++) {
       moved = [];
-      pdFrame(r, st, moved);
+      dist = [];
+      pdFrame(r, st, moved, dist);
     }
-    return { st: st, moved: moved };
+    return { st: st, moved: moved, dist: dist };
   }
 
   // ---- drawing ----
-  const COL = D.colours, PAL = D.palette, NS = D.sizeBuckets;
+  const COL = D.colours, PAL = D.palette, NS = D.sizeBuckets, MT = D.moveTiers, MC = D.moveColours, MW = D.moveWidths;
+  const tierOf = (d: number) => {
+    let t = 0;
+    while (t < MT.length && d >= MT[t]) t++;
+    return t;
+  };
+  const farCount = (dist: number[]) => dist.filter((d) => d >= MT[MT.length - 1]).length;
   function draw(cv: any, P: any, i: number, view: any, opts: any) {
     const S = stateAt(P, i);
     const st = S.st, F = st.f;
@@ -410,6 +483,7 @@ function client(): void {
     for (let k = 0; k < st.n; k++) {
       if (!st.live[k] || kinds[k] !== 'd' || par[k] < 0 || !st.live[par[k]]) continue;
       const q = par[k];
+      if (!opts.ghosts && (F[4][k] & 1 || F[4][q] & 1)) continue;
       const x1 = (F[0][q] + F[2][q] / 2) / 100, y1 = (F[1][q] + F[3][q]) / 100;
       const x2 = (F[0][k] + F[2][k] / 2) / 100, y2 = F[1][k] / 100, ym = (y1 + y2) / 2;
       g.moveTo(x1, y1); g.lineTo(x1, ym); g.lineTo(x2, ym); g.lineTo(x2, y2);
@@ -423,6 +497,7 @@ function client(): void {
       if (!st.live[k] || kinds[k] !== 'd') continue;
       const x = F[0][k] / 100, y = F[1][k] / 100, w = F[2][k] / 100, h = F[3][k] / 100;
       if (F[4][k] & 1) {
+        if (!opts.ghosts) continue;
         g.setLineDash([3 * lw, 2 * lw]);
         g.strokeStyle = PAL.ghost;
         g.strokeRect(x, y, w, h);
@@ -447,11 +522,16 @@ function client(): void {
         g.fillRect(x, y, w, h);
       }
     }
-    const mv = opts.movedList || S.moved;
+    const mv = opts.movedList || S.moved, md = opts.movedDist || S.dist;
     if (opts.moved && mv.length) {
-      g.strokeStyle = PAL.moved;
-      g.lineWidth = Math.max(1.5 * lw, 0.1);
-      for (const k of mv) g.strokeRect(F[0][k] / 100, F[1][k] / 100, F[2][k] / 100, F[3][k] / 100);
+      // one pass per tier, faint (short moves) first so long moves draw on top
+      for (let t = 0; t <= MT.length; t++) {
+        g.strokeStyle = MC[t];
+        g.lineWidth = Math.max(MW[t] * 1.4 * lw, 0.07 * MW[t]);
+        g.beginPath();
+        for (let j = 0; j < mv.length; j++) if (tierOf(md[j]) === t) { const k = mv[j]; g.rect(F[0][k] / 100, F[1][k] / 100, F[2][k] / 100, F[3][k] / 100); }
+        g.stroke();
+      }
     }
     return { S: S, meta: meta };
   }
@@ -479,16 +559,19 @@ function client(): void {
       }
       const key = a[0] + ',' + a[1];
       const prev = prevBy[key];
-      let moved: number[] = [];
+      const moved: number[] = [], dist: number[] = [];
       if (prev) {
         // moved since the previous filmstrip frame: live, non-ghost in both, x/y changed
         const cur = stateAt(P, best).st, ps = prev.st;
         for (let k = 0; k < cur.n; k++) {
           if (!cur.live[k] || !ps.live[k] || cur.f[4][k] & 1 || ps.f[4][k] & 1) continue;
-          if (cur.f[0][k] !== ps.f[0][k] || cur.f[1][k] !== ps.f[1][k]) moved.push(k);
+          if (cur.f[0][k] !== ps.f[0][k] || cur.f[1][k] !== ps.f[1][k]) {
+            moved.push(k);
+            dist.push(Math.hypot(cur.f[0][k] - ps.f[0][k], cur.f[1][k] - ps.f[1][k]) / 100);
+          }
         }
       }
-      const r = draw(cv, P, best, fitView(cv, P.c.filmVp), { moved: true, ghosts: true, movedList: moved });
+      const r = draw(cv, P, best, fitView(cv, P.c.filmVp), { moved: true, ghosts: true, movedList: moved, movedDist: dist });
       prevBy[key] = r.S;
     });
   }
@@ -541,7 +624,8 @@ function client(): void {
     info.textContent = '#' + m[0] + ' of ' + (P.fx.used - 1) + ' · ' + new Date(m[1] * 1000).toISOString().slice(0, 10) + ' · ' + m[2] + ' · ' + m[3];
     let live = 0;
     for (let k = 0; k < r.S.st.n; k++) if (r.S.st.live[k] && P.p.kinds[k] === 'f' && !(r.S.st.f[4][k] & 1)) live++;
-    info2.textContent = 'frame ' + (idx + 1) + '/' + P.p.frames.length + ' · ' + live + ' files · ' + (idx ? r.S.moved.length + ' moved since previous frame' : 'first frame');
+    const far = farCount(r.S.dist);
+    info2.textContent = 'frame ' + (idx + 1) + '/' + P.p.frames.length + ' · ' + live + ' files · ' + (idx ? r.S.moved.length + ' moved since previous frame (' + far + ' by ≥ ' + MT[MT.length - 1] + ' cells)' : 'first frame');
   }
   function stop() {
     if (timer) clearInterval(timer);
@@ -613,6 +697,7 @@ function client(): void {
     let hit = -1;
     for (let k = 0; k < st.n; k++) {
       if (!st.live[k]) continue;
+      if (!opts.ghosts && F[4][k] & 1) continue; // hidden
       if (wx >= F[0][k] && wx <= F[0][k] + F[2][k] && wy >= F[1][k] && wy <= F[1][k] + F[3][k]) {
         if (hit < 0 || P.p.kinds[k] === 'f') hit = k;
       }
@@ -637,16 +722,25 @@ function client(): void {
     load(0, 0);
     report('player ready · self-check pending');
     drawFilmCanvases();
-    // self-check: decode every frame of every player once (no caching, so memory stays flat)
+    // self-check: decode every frame of every player once (no caching, so memory stays flat),
+    // and compare the decoded geometry of a few frames with checksums taken from the source
+    // frames at build time.
     const check = () => {
-      let frames = 0;
+      let frames = 0, sums = 0;
       D.fixtures.forEach((f: any) => f.configs.forEach((c: any) => {
         const p = c.player, r = { b: b64bytes(p.data), p: 0 }, st = pdNew(p.kinds.length);
-        for (let i = 0; i < p.frames.length; i++) pdFrame(r, st, null);
+        const want = new Map(c.check.map((x: number[]) => [x[0], x[1]]));
+        for (let i = 0; i < p.frames.length; i++) {
+          pdFrame(r, st, null);
+          if (!want.has(i)) continue;
+          const got = pdChecksum(st);
+          if (got !== want.get(i)) throw new Error('checksum mismatch in ' + f.name + '/' + c.label + ' frame ' + i + ': ' + got + ' != ' + want.get(i));
+          sums++;
+        }
         if (r.p !== r.b.length) throw new Error('decode mismatch in ' + f.name + '/' + c.label);
         frames += p.frames.length;
       }));
-      report('ok · ' + frames + ' player frames decoded');
+      report('ok · ' + frames + ' player frames decoded · ' + sums + ' frame checksums match');
     };
     if (/[?&]check\b/.test(location.search) || navigator.webdriver || !('requestIdleCallback' in window)) check();
     else (window as any).requestIdleCallback(check, { timeout: 4000 });
@@ -655,6 +749,9 @@ function client(): void {
 
 // ---------- assembly ----------
 
+/** Frames per player whose decoded geometry the self-check compares with build-time checksums. */
+const CHECK_FRAMES = 5;
+
 export function buildReport(fixtures: FixtureResult[], o: ReportOptions): ReportResult {
   const p = plan(fixtures, o.budgetBytes);
   const levels: Record<string, number> = {};
@@ -662,6 +759,9 @@ export function buildReport(fixtures: FixtureResult[], o: ReportOptions): Report
     colours: FILE_COLOURS,
     palette: PALETTE,
     sizeBuckets: SIZE_BUCKETS,
+    moveTiers: MOVE_TIERS,
+    moveColours: MOVE_COLOURS,
+    moveWidths: MOVE_WIDTHS,
     fixtures: fixtures.map((f) => ({
       name: f.name,
       used: f.used,
@@ -677,6 +777,7 @@ export function buildReport(fixtures: FixtureResult[], o: ReportOptions): Report
           vp: c.playerViewport,
           filmVp: c.film.viewport,
           player: { frames: pl.frames, kinds: pl.kinds, dirPath: pl.dirPath, dirParent: pl.dirParent, data: pl.data },
+          check: pl.sums ? evenly(pl.frames.length, CHECK_FRAMES).map((i) => [i, pl.sums[i]]) : [],
         };
       }),
     })),
@@ -702,7 +803,7 @@ ${scoreboard(f)}
 <h3>Stability vs compactness</h3>
 ${scatter(f)}
 <h3>Filmstrips</h3>
-<p class="muted small">${f.configs[0]?.film.frames.length ?? 0} evenly spaced commits per config${isStacked(f) ? ', stacked top to bottom because the layouts are very wide. Each config is scaled to the full width (rows capped at 220 px tall); the grey bar beside its name shows its width relative to the widest config' : ''}. Frames of one config share a viewport, so growth is visible${isStacked(f) ? '' : ', and all configs of this repo share one scale, so sprawl is comparable'}. Pink outline = moved since the previous frame in the strip.</p>
+<p class="muted small">${f.configs[0]?.film.frames.length ?? 0} evenly spaced commits per config${isStacked(f) ? ', stacked top to bottom because the layouts are very wide. Each config is scaled to the full width (rows capped at 220 px tall); the grey bar beside its name shows its width relative to the widest config' : ''}. Frames of one config share a viewport, so growth is visible${isStacked(f) ? '' : ', and all configs of this repo share one scale, so sprawl is comparable'}. Outline = moved since the previous frame in the strip, brighter for longer moves (see legend; "far" = ≥ ${MOVE_TIERS[MOVE_TIERS.length - 1]} cells). Frames are many commits apart, so outlines add up all the motion in between.</p>
 ${filmstrips(f, i, p.canvasFilm.has(f.name))}
 </section>`;
   }).join('\n');
@@ -718,7 +819,7 @@ ${filmstrips(f, i, p.canvasFilm.has(f.name))}
 <nav><a href="#about">about</a><a href="#summary">summary</a><a href="#player">player</a>${nav}</nav></header>
 <main>
 ${intro()}
-<section id="summary"><h2>Across repos</h2>${summaryTable(fixtures)}</section>
+<section id="summary"><h2>Across repos</h2>${summarySection(fixtures)}</section>
 <section id="player"><h2>Player</h2>
 <div class="pctl"><select id="pfx" aria-label="repo"></select><select id="pcf" aria-label="config"></select></div>
 <div class="pctl"><button id="pprev" aria-label="previous">◀</button><button id="pplay" aria-label="play">▶</button><button id="pnext" aria-label="next">▶︎|</button>
@@ -728,7 +829,7 @@ ${intro()}
 <div class="pctl small"><button id="pzout">−</button><button id="pzin">+</button><button id="pfit">fit</button>
 <label><input type="checkbox" id="pmoved" checked> moved</label><label><input type="checkbox" id="pghost" checked> ghosts</label></div>
 <p id="pinfo" class="pinfo"></p><p id="pinfo2" class="muted small"></p><p id="ptip" class="small"></p>
-<p class="muted small">Frames are evenly spaced samples of the history; pink outline = moved since the previous frame shown. Drag to pan, wheel or ± to zoom, tap a box to name it.</p>
+<p class="muted small">Frames are evenly spaced samples of the history; outline = moved since the previous frame shown (all the motion between two samples adds up), brighter for longer moves: ${MOVE_TIERS.map((_, t) => moveTierText(t)).concat(moveTierText(MOVE_TIERS.length)).join(' / ')}. Drag to pan, wheel or ± to zoom, tap a box to name it.</p>
 </section>
 ${fxSections}
 ${p.notes.length ? `<section><h2>Notes</h2><ul class="small">${p.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>` : ''}
@@ -782,6 +883,7 @@ table.sb .lbl{text-align:left;position:sticky;left:0;background:var(--panel);z-i
 table.sb thead .lbl{background:#142030;z-index:2}
 table.sb tbody tr:hover td,table.sb tbody tr:hover th{background:#172434}
 td.best{background:var(--best);color:#e8fff3;font-weight:600}
+table.sb .rk{display:inline-block;min-width:1.4em;color:var(--muted);font-weight:400}
 td.heat{background:color-mix(in srgb,#2a78d6 calc(var(--s)*55%),transparent)}
 th.sub{font-weight:400!important;color:var(--muted)!important}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}

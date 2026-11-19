@@ -5,15 +5,16 @@
 // which amortises the pushes. Reservations never shrink; a directory that
 // disappears drops its reservation (a re-appearing path starts fresh).
 
-import type { Strategy } from '../engine.ts';
-import { geoFromOptions, measure, place } from '../geometry/treev.ts';
+import { defaultsOf, type Strategy } from '../engine.ts';
+import { geoFromOptions, geoSchema, measure, place } from '../geometry/treev.ts';
 import { cmp, dirname } from '../model/tree.ts';
-import type { Delta, LayoutNode, TreeState } from '../types.ts';
+import type { Delta, LayoutNode, OptionSchema, TreeState } from '../types.ts';
 import { liveTree, type Order } from './recompute.ts';
-import { dropReservations, fixedHooks, reserveOptions, updateReservations, type DirShape, type Reservations } from './reserve.ts';
+import { fixedHooks, reserveOptions, reserveSchema, updateReservations, type DirShape, type Reservations } from './reserve.ts';
 
 export interface SlackState {
   res: Reservations;
+  kids: Map<string, string[]>; // live child directories per directory (unordered); kept in step()
 }
 
 const order = (o: Record<string, unknown>): Order => (o.order === 'name' ? 'name' : 'birth');
@@ -32,40 +33,62 @@ export function dirtyDirs(delta: Delta): Set<string> {
   return s;
 }
 
-/** Shapes of the live tree as liveTree() would build it (direct file count, ordered kids). */
-function liveShapes(t: TreeState, ord: Order): (path: string) => DirShape | undefined {
-  const kids = new Map<string, string[]>();
-  for (const d of t.dirs.keys()) {
-    if (d === '') continue;
-    const p = dirname(d);
-    let a = kids.get(p);
-    if (!a) kids.set(p, (a = []));
-    a.push(d);
+/** Keep the child-directory index in step with the tree: O(dirs added + removed). */
+function updateKids(kids: Map<string, string[]>, delta: Delta) {
+  for (const p of delta.dirsAdded) {
+    if (p === '') continue;
+    const parent = dirname(p);
+    let a = kids.get(parent);
+    if (!a) kids.set(parent, (a = []));
+    if (!a.includes(p)) a.push(p);
   }
+  for (const p of delta.dirsRemoved) {
+    kids.delete(p);
+    const parent = dirname(p);
+    const a = kids.get(parent);
+    if (!a) continue;
+    const i = a.indexOf(p);
+    if (i >= 0) a.splice(i, 1);
+    if (!a.length) kids.delete(parent);
+  }
+}
+
+/** Shapes of the live tree as liveTree() would build it (direct file count, ordered kids). */
+function liveShapes(t: TreeState, kids: Map<string, string[]>, ord: Order): (path: string) => DirShape | undefined {
   const byDir = (a: string, b: string) =>
     ord === 'birth' ? t.dirs.get(a)!.arrived - t.dirs.get(b)!.arrived || cmp(a, b) : cmp(a, b);
   return (path) => {
     const d = t.dirs.get(path);
     if (!d) return undefined;
-    const k = (kids.get(path) ?? []).sort(byDir);
+    const k = [...(kids.get(path) ?? [])].sort(byDir);
     let files = d.count;
     for (const c of k) files -= t.dirs.get(c)!.count;
     return { files, kids: k };
   };
 }
 
+const schema: OptionSchema = {
+  order: { type: 'enum', values: ['birth', 'name'], default: 'birth', doc: 'sibling order: arrival in the directory, or name' },
+  ...reserveSchema({ slack: 0.25 }),
+  ...geoSchema(),
+};
+
 export const slack: Strategy<SlackState> = {
   name: 'slack',
   description:
     'Online: live tree with per-directory reservations (cols, rows, band width) that grow when exceeded (growthMode=multiply: ceil(required*growth); additive: headroom only where growth originates) and never shrink. order, slack, growth, growthMode, gridMode.',
   usesFuture: false,
-  defaults: { order: 'birth', slack: 0.25, growth: 1.5, growthMode: 'multiply', align: 'left', gridMode: 'sqrt', gridCols: 8 },
-  init: () => ({ res: new Map() }),
+  schema,
+  defaults: defaultsOf(schema),
+  init: () => ({ res: new Map(), kids: new Map() }),
+  // Proportional to the dirty directories (and their ancestors), not to the tree.
   step(state, tree, _c, delta, ctx) {
-    if (delta.dirsRemoved.length) dropReservations(state.res, (p) => tree.dirs.has(p));
+    updateKids(state.kids, delta);
+    // Every vanished directory (subdirectories included) is listed in dirsRemoved.
+    for (const p of delta.dirsRemoved) state.res.delete(p);
     const g = geoFromOptions(ctx.options);
     const ro = reserveOptions(ctx.options, { slack: 0.25, growth: 1.5 });
-    updateReservations(state.res, ro, g, dirtyDirs(delta), liveShapes(tree, order(ctx.options)));
+    updateReservations(state.res, ro, g, dirtyDirs(delta), liveShapes(tree, state.kids, order(ctx.options)));
   },
   frame(state, tree, _c, ctx): LayoutNode[] {
     const g = geoFromOptions(ctx.options);

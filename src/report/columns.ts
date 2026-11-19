@@ -13,8 +13,11 @@ export interface Column {
   better: Better;
 }
 
-const pct = (v: number) => (v === 0 ? '0' : v < 0.001 ? '<0.1%' : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`);
-const num = (v: number) => (v === 0 ? '0' : v < 0.001 ? '<0.001' : v < 0.01 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : v < 1000 ? v.toFixed(1) : Math.round(v).toLocaleString('en-US'));
+const pct = (v: number) => (Number.isNaN(v) ? '–' : v === 0 ? '0' : v < 0.001 ? '<0.1%' : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`);
+const num = (v: number) => (Number.isNaN(v) ? '–' : v === 0 ? '0' : v < 0.001 ? '<0.001' : v < 0.01 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : v < 1000 ? v.toFixed(1) : Math.round(v).toLocaleString('en-US'));
+
+/** Horizon summary for gap k, or undefined when the run was too short (or predates the metric). */
+export const horizon = (s: RunSummary, k: number) => s.horizon?.find((h) => h.k === k);
 
 export const COLUMNS: Column[] = [
   { key: 'movedFrac', label: 'moved / commit', help: 'Average share of surviving nodes (files + platforms) that changed position from one commit to the next.', get: (s) => s.all.meanMovedFrac, fmt: pct, better: 'low' },
@@ -26,20 +29,40 @@ export const COLUMNS: Column[] = [
   { key: 'maxJump', label: 'max jump', help: 'Largest single node move in the whole history.', get: (s) => s.all.max, fmt: num, better: 'low' },
   { key: 'stepsMoving', label: 'commits w/ motion', help: 'Share of commits in which at least one surviving node moved.', get: (s) => s.all.stepsWithMoveFrac, fmt: pct, better: 'low' },
   { key: 'disruption', label: 'disruption / commit', help: 'Total distance moved by all surviving nodes, per commit. Sums many small shifts and a few big ones alike.', get: (s) => s.all.disruptionPerStep, fmt: num, better: 'low' },
-  { key: 'quietMotion', label: 'motion w/o change', help: 'Commits that did not add, remove or rename anything (content edits only) but moved the layout anyway, as a share of such commits. Should be 0.', get: (s) => (s.quiet.steps ? s.quiet.movedAnyway / s.quiet.steps : 0), fmt: (v, s) => `${s.quiet.movedAnyway}/${s.quiet.steps}`, better: 'low' },
+  { key: 'quietMotion', label: 'motion w/o change', help: 'Commits that did not add, remove or rename anything (content edits only) but moved the layout anyway, as a share of such commits. Not necessarily a bug: tombstone with ghostTtl expires ghosts on whatever commit their time runs out, quiet or not, and the resulting compaction moves things.', get: (s) => (s.quiet.steps ? s.quiet.movedAnyway / s.quiet.steps : 0), fmt: (v, s) => `${s.quiet.movedAnyway}/${s.quiet.steps}`, better: 'low' },
+  ...[100, 500].flatMap((k): Column[] => [
+    { key: `h${k}Moved`, label: `moved after ${k}`, help: `Horizon: frames ${k} commits apart (commit 0 vs ${k}, ${k} vs ${2 * k}, …) compared directly. Share of nodes alive in both that are somewhere else, averaged over those pairs. Whether your mental map survives a gap of ${k} commits. – = history shorter than ${2 * k + 1} commits.`, get: (s) => horizon(s, k)?.meanMovedFrac ?? NaN, fmt: pct, better: 'low' },
+    { key: `h${k}Shift`, label: `shift after ${k}`, help: `Horizon: mean distance (layout units) moved by nodes alive in both frames ${k} commits apart, averaged over those pairs.`, get: (s) => horizon(s, k)?.meanShift ?? NaN, fmt: num, better: 'low' },
+  ]),
   { key: 'compact', label: 'compactness', help: 'Live file cells divided by the bounding-box area, averaged over every commit. Higher = denser picture.', get: (s) => s.compactness.mean, fmt: (v) => v.toFixed(3), better: 'high' },
   { key: 'compactFinal', label: 'final compactness', help: 'Compactness at the last commit.', get: (s) => s.compactness.final, fmt: (v) => v.toFixed(3), better: 'high' },
   { key: 'size', label: 'final w × h', help: 'Bounding box at the last commit, layout units.', get: (s) => s.bbox.area, fmt: (v, s) => `${Math.round(s.bbox.w)}×${Math.round(s.bbox.h)}`, better: null },
   { key: 'aspect', label: 'aspect', help: 'Final width / height. TreeV layouts tend to be wide.', get: (s) => s.bbox.aspect, fmt: (v) => v.toFixed(1), better: null },
   { key: 'disorder', label: 'out of name order', help: 'Share of adjacent siblings (platforms left-to-right, files in slot order) that are not alphabetical, averaged over commits. A taste metric: 0 = fully alphabetical.', get: (s) => s.order.meanDisorder, fmt: pct, better: 'low' },
-  { key: 'ghosts', label: 'ghost files', help: 'Share of file slots at the last commit that are tombstones of deleted files.', get: (s) => s.ghost.finalFileFrac, fmt: pct, better: 'low' },
+  { key: 'ghosts', label: 'ghost files', help: 'Share of file slots at the last commit that are ghosts: tombstones of deleted files, and (tombstone) the slot a file left behind when it moved to another directory.', get: (s) => s.ghost.finalFileFrac, fmt: pct, better: 'low' },
 ];
 
-/** Metrics that feed the cross-fixture summary scores, grouped. */
-export const SCORE_GROUPS: { key: string; label: string; cols: string[] }[] = [
-  { key: 'stability', label: 'stability', cols: ['movedPerChange', 'meanShift', 'disruption', 'p95Jump'] },
-  { key: 'compact', label: 'compactness', cols: ['compact'] },
-  { key: 'order', label: 'name order', cols: ['disorder'] },
+/**
+ * Cross-repo composite. Per repo, each config gets a rank score per ingredient (100 = best
+ * config on that repo, 0 = worst); an ingredient with several columns averages their scores
+ * over the columns available on that repo; a group averages its ingredients; the group
+ * score is then averaged over repos. Distance-type metrics are near-duplicates of each other
+ * (mean shift, disruption, p95 jump all scale with how far things go), so stability keeps
+ * one "how often" (moved / tree change), one "how far on average" (mean shift), one "how far
+ * at worst" (p95 jump) and the horizon share.
+ */
+export const SCORE_GROUPS: { key: string; label: string; ingredients: { label: string; cols: string[] }[] }[] = [
+  {
+    key: 'stability', label: 'stability',
+    ingredients: [
+      { label: 'moved / tree change', cols: ['movedPerChange'] },
+      { label: 'mean shift', cols: ['meanShift'] },
+      { label: 'p95 jump', cols: ['p95Jump'] },
+      { label: 'moved after 100/500', cols: ['h100Moved', 'h500Moved'] },
+    ],
+  },
+  { key: 'compact', label: 'compactness', ingredients: [{ label: 'compactness', cols: ['compact'] }] },
+  { key: 'order', label: 'name order', ingredients: [{ label: 'out of name order', cols: ['disorder'] }] },
 ];
 
 export function column(key: string): Column {
@@ -50,13 +73,18 @@ export function column(key: string): Column {
 
 /**
  * Normalized rank of each value among `values`: 0 = best, 1 = worst, ties share the
- * average rank. With one value the rank is 0.
+ * average rank. With one value the rank is 0. NaN values (metric unavailable) get NaN
+ * and are left out of the ranking.
  */
 export function normRanks(values: number[], better: 'low' | 'high'): number[] {
-  const n = values.length;
-  if (n <= 1) return values.map(() => 0);
-  const idx = values.map((v, i) => [better === 'low' ? v : -v, i] as [number, number]).sort((a, b) => a[0] - b[0]);
-  const out = new Array<number>(n);
+  const out = new Array<number>(values.length).fill(NaN);
+  const idx = values
+    .map((v, i) => [better === 'low' ? v : -v, i] as [number, number])
+    .filter((p) => !Number.isNaN(p[0]))
+    .sort((a, b) => a[0] - b[0]);
+  const n = idx.length;
+  if (n === 1) out[idx[0][1]] = 0;
+  if (n <= 1) return out;
   let i = 0;
   while (i < n) {
     let j = i;

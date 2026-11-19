@@ -85,3 +85,12 @@ export interface Frame {
 }
 
 export type Options = Record<string, string | number | boolean>;
+
+// ---- option schemas (validated by mergeOptions in engine.ts) ----
+
+export type OptionSpec =
+  | { type: 'number'; default: number; min?: number; max?: number; minExclusive?: boolean; integer?: boolean; doc?: string }
+  | { type: 'boolean'; default: boolean; doc?: string }
+  | { type: 'enum'; default: string; values: string[]; doc?: string };
+
+export type OptionSchema = Record<string, OptionSpec>;

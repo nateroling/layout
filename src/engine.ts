@@ -9,10 +9,10 @@
 
 import { applyCommit, emptyTree } from './model/tree.ts';
 import { bbox } from './geometry/treev.ts';
-import type { Commit, Delta, Frame, History, LayoutNode, Options, TreeState } from './types.ts';
+import type { Commit, Delta, Frame, History, LayoutNode, OptionSchema, OptionSpec, Options, TreeState } from './types.ts';
 
 export interface StrategyContext {
-  options: Options; // defaults already merged in
+  options: Options; // validated, defaults already merged in (see mergeOptions)
   history?: History; // only provided when usesFuture is true
 }
 
@@ -20,22 +20,100 @@ export interface Strategy<S = unknown> {
   name: string;
   description: string;
   usesFuture: boolean;
-  defaults: Options;
+  /** Every option the strategy accepts (its own and the shared geometry), with defaults. */
+  schema: OptionSchema;
+  defaults: Options; // = defaultsOf(schema), kept for convenience
   init(ctx: StrategyContext): S;
   step(state: S, tree: TreeState, commit: Commit, delta: Delta, ctx: StrategyContext): void;
   frame(state: S, tree: TreeState, commit: Commit, ctx: StrategyContext): LayoutNode[];
 }
 
-export const engineDefaults: Options = { followRenames: true };
+/** Options the Runner itself reads; valid for every strategy. */
+export const engineSchema: OptionSchema = {
+  followRenames: { type: 'boolean', default: true, doc: 'renames keep file identity (else delete + add)' },
+};
+export const engineDefaults: Options = defaultsOf(engineSchema);
 
-export function mergeOptions(s: Strategy, given: Options = {}): Options {
-  return { ...engineDefaults, ...s.defaults, ...given };
+export function defaultsOf(schema: OptionSchema): Options {
+  const o: Options = {};
+  for (const [k, spec] of Object.entries(schema)) o[k] = spec.default;
+  return o;
 }
 
+/** Engine options followed by the strategy's own, as the Runner validates them. */
+export function optionSchema(s: Strategy): OptionSchema {
+  return { ...engineSchema, ...s.schema };
+}
+
+/** One-line description of an option: `growth: number >= 1 (default 1.5)`. */
+export function describeOption(name: string, spec: OptionSpec): string {
+  let t: string;
+  if (spec.type === 'enum') t = spec.values.join('|');
+  else if (spec.type === 'boolean') t = 'boolean';
+  else {
+    const r: string[] = [];
+    if (spec.min !== undefined) r.push(`${spec.minExclusive ? '>' : '>='} ${spec.min}`);
+    if (spec.max !== undefined) r.push(`<= ${spec.max}`);
+    t = `${spec.integer ? 'integer' : 'number'}${r.length ? ' ' + r.join(', ') : ''}`;
+  }
+  return `${name}: ${t} (default ${spec.default})`;
+}
+
+// Plain decimal numbers only: "12", "-0.5", ".25". Not "0x10", "1e3", " ", "".
+const DECIMAL = /^-?(\d+(\.\d*)?|\.\d+)$/;
+
+/** Check one value against its spec; returns the normalised value or an error message. */
+function coerce(spec: OptionSpec, v: unknown): { ok: string | number | boolean } | { err: string } {
+  if (spec.type === 'boolean') {
+    if (v === true || v === 'true') return { ok: true };
+    if (v === false || v === 'false') return { ok: false };
+    return { err: 'expected true or false' };
+  }
+  if (spec.type === 'enum') {
+    if (typeof v === 'string' && spec.values.includes(v)) return { ok: v };
+    return { err: `expected one of ${spec.values.join('|')}` };
+  }
+  const n = typeof v === 'number' ? v : typeof v === 'string' && DECIMAL.test(v) ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return { err: 'expected a number' };
+  if (spec.integer && !Number.isInteger(n)) return { err: 'expected an integer' };
+  if (spec.min !== undefined && (spec.minExclusive ? n <= spec.min : n < spec.min))
+    return { err: `must be ${spec.minExclusive ? '>' : '>='} ${spec.min}` };
+  if (spec.max !== undefined && n > spec.max) return { err: `must be <= ${spec.max}` };
+  return { ok: n };
+}
+
+/**
+ * Validate `given` against the engine + strategy schema and merge it over the defaults.
+ * Unknown keys and wrong types/values throw, listing the valid options. Values are normalised
+ * ("true" -> true, "1.5" -> 1.5), so strategies can read them as typed.
+ */
+export function mergeOptions(s: Strategy, given: Options = {}): Options {
+  const schema = optionSchema(s);
+  const out = defaultsOf(schema);
+  const errs: string[] = [];
+  for (const [k, v] of Object.entries(given)) {
+    const spec = Object.hasOwn(schema, k) ? schema[k] : undefined;
+    if (!spec) {
+      const near = Object.keys(schema).find((x) => x.toLowerCase() === k.toLowerCase());
+      errs.push(`unknown option "${k}"${near ? ` (did you mean "${near}"?)` : ''}`);
+      continue;
+    }
+    const r = coerce(spec, v);
+    if ('err' in r) errs.push(`${k}=${JSON.stringify(v)}: ${r.err}`);
+    else out[k] = r.ok;
+  }
+  if (errs.length) {
+    const valid = Object.entries(schema).map(([k, spec]) => '  ' + describeOption(k, spec));
+    throw new Error(`invalid options for strategy "${s.name}":\n  ${errs.join('\n  ')}\nvalid options:\n${valid.join('\n')}`);
+  }
+  return out;
+}
+
+/** CLI `--opt k=v` value: true/false -> boolean, plain decimals -> number, anything else stays a string. */
 export function parseOptionValue(v: string): string | number | boolean {
   if (v === 'true') return true;
   if (v === 'false') return false;
-  if (v !== '' && Number.isFinite(Number(v))) return Number(v);
+  if (DECIMAL.test(v)) return Number(v);
   return v;
 }
 

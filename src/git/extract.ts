@@ -5,12 +5,24 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Change, Commit, History } from '../types.ts';
 
 const RS = '\x1e';
 const US = '\x1f';
 const MAXBUF = 1024 * 1024 * 1024;
+
+/**
+ * Part of the history cache key. BUMP THIS whenever extraction semantics change (which changes are
+ * emitted, how they are typed, path handling, sizes...), so stale `.cache/` entries are never reused.
+ *   1: first-parent -M --raw, C->A, T->M, gitlink filtering, unquoting, --root.
+ */
+export const EXTRACTOR_VERSION = 1;
+
+/** Project root (this file is src/git/extract.ts): the cache lives here, not in process.cwd(). */
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const DEFAULT_CACHE_DIR = join(ROOT, '.cache');
 
 function git(repo: string, args: string[], input?: string): string {
   return execFileSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], {
@@ -140,13 +152,13 @@ export function extractHistory(repoPath: string, opts: { ref?: string; name?: st
   return { repo: opts.name ?? basename(repo), head, commits };
 }
 
-/** Extract with an on-disk cache keyed by repo name + head sha. */
+/** Extract with an on-disk cache keyed by repo name + head sha + EXTRACTOR_VERSION (default dir: <project>/.cache). */
 export function loadHistory(repoPath: string, opts: { ref?: string; cacheDir?: string; name?: string } = {}): History {
   const repo = resolve(repoPath);
   const name = opts.name ?? basename(repo);
   const head = resolveRef(repo, opts.ref ?? 'HEAD');
-  const dir = opts.cacheDir ?? join(process.cwd(), '.cache');
-  const file = join(dir, `${name}-${head.slice(0, 12)}.history.json`);
+  const dir = opts.cacheDir ?? DEFAULT_CACHE_DIR;
+  const file = join(dir, `${name}-${head.slice(0, 12)}-x${EXTRACTOR_VERSION}.history.json`);
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8')) as History;
   const h = extractHistory(repo, { ref: head, name });
   mkdirSync(dir, { recursive: true });
@@ -154,17 +166,26 @@ export function loadHistory(repoPath: string, opts: { ref?: string; cacheDir?: s
   return h;
 }
 
-/** Resolve a user-supplied commit reference to a first-parent index. */
+/**
+ * Resolve a user-supplied commit reference to a first-parent index.
+ *   undefined | '' | 'HEAD'  -> last commit
+ *   '#N'                     -> index N (0-based)
+ *   anything else            -> sha prefix, >= 4 hex chars, unique on the first-parent timeline.
+ * A bare number is always a sha prefix (never an index), so '1234' cannot silently mean either.
+ */
 export function resolveCommitIndex(history: History, at: string | undefined): number {
   const last = history.commits.length - 1;
   if (at === undefined || at === 'HEAD' || at === '') return last;
-  if (/^#?\d+$/.test(at) && (at.startsWith('#') || at.length < 7)) {
-    const n = Number(at.replace('#', ''));
-    if (n < 0 || n > last) throw new Error(`commit index ${n} out of range 0..${last}`);
+  if (at.startsWith('#')) {
+    if (!/^#\d+$/.test(at)) throw new Error(`bad commit index ${at}: expected #N with N in 0..${last}`);
+    const n = Number(at.slice(1));
+    if (n > last) throw new Error(`commit index ${n} out of range 0..${last}`);
     return n;
   }
-  const hits = history.commits.filter((c) => c.sha.startsWith(at));
+  if (!/^[0-9a-fA-F]{4,40}$/.test(at)) throw new Error(`bad commit ref "${at}": expected HEAD, #N (index) or a sha prefix of >= 4 hex chars`);
+  const pre = at.toLowerCase();
+  const hits = history.commits.filter((c) => c.sha.startsWith(pre));
   if (hits.length === 1) return hits[0].index;
-  if (hits.length > 1) throw new Error(`ambiguous sha prefix ${at}`);
+  if (hits.length > 1) throw new Error(`ambiguous sha prefix ${at} (${hits.length} first-parent commits)`);
   throw new Error(`${at} is not on the first-parent timeline of ${history.repo}; pass an index (#N) or a first-parent sha`);
 }

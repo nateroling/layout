@@ -7,10 +7,10 @@
 // Options: order=name|birth (birth = first appearance of the path, default),
 // showGhosts (emit non-live union slots as ghosts; default false), geometry.
 
-import type { Strategy, StrategyContext } from '../engine.ts';
-import { geoFromOptions, measure, place, type LDir } from '../geometry/treev.ts';
+import { defaultsOf, type Strategy, type StrategyContext } from '../engine.ts';
+import { geoFromOptions, geoSchema, measure, place, type LDir } from '../geometry/treev.ts';
 import { applyCommit, cmp, dirname, emptyTree } from '../model/tree.ts';
-import type { LayoutNode, TreeState } from '../types.ts';
+import type { LayoutNode, OptionSchema, TreeState } from '../types.ts';
 
 interface Slot {
   kind: 'dir' | 'file';
@@ -74,12 +74,19 @@ function build(ctx: StrategyContext): HindsightState {
   return { slots, fileAt, dirAt };
 }
 
+const schema: OptionSchema = {
+  order: { type: 'enum', values: ['birth', 'name'], default: 'birth', doc: 'sibling order: first appearance of the path, or name' },
+  showGhosts: { type: 'boolean', default: false, doc: 'also emit the non-live union slots, as ghosts' },
+  ...geoSchema(),
+};
+
 export const hindsight: Strategy<HindsightState> = {
   name: 'hindsight',
   description:
     'Uses the future: one fixed layout of every path that ever existed; commit N shows the live subset. order=name|birth, showGhosts.',
   usesFuture: true,
-  defaults: { order: 'birth', align: 'left', gridMode: 'sqrt', gridCols: 8, showGhosts: false },
+  schema,
+  defaults: defaultsOf(schema),
   init: (ctx) => build(ctx),
   step: () => {},
   frame(state, tree: TreeState, _c, ctx): LayoutNode[] {

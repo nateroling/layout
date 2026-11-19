@@ -6,7 +6,8 @@
 //   files    boxes coloured by recency of last modification (hot = just changed,
 //            cool = untouched for a long time) and lightness by blob size
 //   ghosts   dashed outlines (tombstoned slots)
-//   moved    optional outline for nodes whose position changed since a previous frame
+//   moved    optional outline for nodes whose position changed since a previous frame,
+//            tiered by distance (MOVE_TIERS): faint for small nudges, bright for big jumps
 //
 // Files are batched into one <path> per colour class, so a frame costs roughly
 // 25-30 bytes per node. Coordinates are rounded to 2 decimals.
@@ -37,7 +38,7 @@ export interface SvgOptions {
   caption?: Caption;
   totalCommits?: number; // for recency colouring (default: frame.commit + 1)
   viewport?: Rect; // fixed layout-unit window (filmstrips share one); default bbox + margin
-  moved?: Set<string>; // node ids to outline
+  moved?: Set<string> | Map<string, number>; // node ids to outline (Map: id -> distance moved, tiered)
   titles?: boolean; // per-node <title> tooltips (default true; costly for big frames)
 }
 
@@ -70,6 +71,20 @@ export const PALETTE = {
   text: '#c8d6e5',
   textDim: '#7d90a6',
 };
+
+/**
+ * Move-distance tiers for "moved" outlines (layout units; 1 = one file cell): a move of
+ * less than MOVE_TIERS[0] is tier 0, ... Outlines get brighter and thicker per tier, so a
+ * repo where everything shifts by a cell does not light up like one where things jump.
+ */
+export const MOVE_TIERS = [2, 10];
+export const MOVE_COLOURS = ['#6e3d66', '#b8439f', '#ff4fd8'];
+export const MOVE_WIDTHS = [0.6, 0.9, 1.4];
+export function moveTier(d: number): number {
+  let t = 0;
+  while (t < MOVE_TIERS.length && d >= MOVE_TIERS[t]) t++;
+  return t;
+}
 
 /** Commits-since-modified -> bucket 0..5 (log scale relative to history length). */
 export function recencyBucket(age: number, total: number): number {
@@ -111,18 +126,29 @@ export function unionViewport(rects: Rect[], margin = 2): Rect {
   return { x: x0 - margin, y: y0 - margin, w: x1 - x0 + 2 * margin, h: y1 - y0 + 2 * margin };
 }
 
-/** Ids of non-ghost nodes whose top-left differs between two frames (by more than eps). */
-export function movedIds(prev: Frame | null, cur: Frame, eps = 1e-6): Set<string> {
-  const out = new Set<string>();
+/**
+ * Non-ghost nodes of `cur` whose top-left differs from `prev` (by more than eps), as
+ * id -> distance. Nodes are matched by `cid ?? id` (rename-following identity, as in the
+ * metrics); the result is keyed by the node's id in `cur`.
+ */
+export function moveDistances(prev: Frame | null, cur: Frame, eps = 1e-6): Map<string, number> {
+  const out = new Map<string, number>();
   if (!prev) return out;
   const p = new Map<string, LayoutNode>();
-  for (const n of prev.nodes) if (!n.ghost) p.set(n.id, n);
+  for (const n of prev.nodes) if (!n.ghost) p.set(n.cid ?? n.id, n);
   for (const n of cur.nodes) {
     if (n.ghost) continue;
-    const q = p.get(n.id);
-    if (q && Math.hypot(n.x - q.x, n.y - q.y) > eps) out.add(n.id);
+    const q = p.get(n.cid ?? n.id);
+    if (!q) continue;
+    const d = Math.hypot(n.x - q.x, n.y - q.y);
+    if (d > eps) out.set(n.id, d);
   }
   return out;
+}
+
+/** Ids of non-ghost nodes whose top-left differs between two frames (see moveDistances). */
+export function movedIds(prev: Frame | null, cur: Frame, eps = 1e-6): Set<string> {
+  return new Set(moveDistances(prev, cur, eps).keys());
 }
 
 export function captionText(c: Caption): string {
@@ -156,7 +182,8 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
     size = ` width="${Math.round(pxW)}" height="${Math.round((pxW * vh) / vw)}"`;
   }
 
-  let wires = '', dirs = '', ghostDirs = '', ghostFiles = '', moved = '';
+  let wires = '', dirs = '', ghostDirs = '', ghostFiles = '';
+  const moved: string[] = MOVE_COLOURS.map(() => '');
   const filePaths: string[] = new Array(RECENCY_BUCKETS * SIZE_BUCKETS).fill('');
   const tips: string[] = [];
   for (const n of f.nodes) {
@@ -179,7 +206,10 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
       filePaths[k] += rectPath(n);
       if (titles) tips.push(`<rect x="${r2(n.x)}" y="${r2(n.y)}" width="${r2(n.w)}" height="${r2(n.h)}"><title>${esc(n.path)}</title></rect>`);
     }
-    if (o.moved?.has(n.id)) moved += rectPath(n);
+    if (o.moved?.has(n.id)) {
+      const d = o.moved instanceof Map ? o.moved.get(n.id)! : Infinity; // a plain Set: top tier
+      moved[moveTier(d)] += rectPath(n);
+    }
   }
 
   const sw = (k: number) => r2(Math.min(0.12 * k, Math.max(0.04, (Math.max(vw, vh) / 400) * k)));
@@ -198,7 +228,9 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
     if (d) out.push(`<path d="${d}" fill="${FILE_COLOURS[Math.floor(k / SIZE_BUCKETS)][k % SIZE_BUCKETS]}"/>`);
   });
   if (ghostFiles) out.push(`<path d="${ghostFiles}" fill="none" stroke="${PALETTE.ghost}" stroke-width="0.5" stroke-dasharray="1.5 1" ${ns}/>`);
-  if (moved) out.push(`<path d="${moved}" fill="none" stroke="${PALETTE.moved}" stroke-width="1.1" ${ns}/>`);
+  moved.forEach((d, t) => {
+    if (d) out.push(`<path d="${d}" fill="none" stroke="${MOVE_COLOURS[t]}" stroke-width="${MOVE_WIDTHS[t]}" ${ns}/>`);
+  });
   if (tips.length) out.push(`<g fill="transparent">${tips.join('')}</g>`);
   if (cap) {
     const tx = r2(vx + capFont * 0.5);

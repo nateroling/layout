@@ -141,7 +141,7 @@ test('structural averages skip content-only commits', () => {
 });
 
 test('player encoding round-trips positions and flags moved nodes', async () => {
-  const { PlayerEncoder, StringTable, pdNew, pdFrame } = await import('../src/report/encode.ts');
+  const { PlayerEncoder, StringTable, pdNew, pdFrame, pdChecksum } = await import('../src/report/encode.ts');
   const st = new StringTable();
   const enc = new PlayerEncoder(st);
   const f0 = frame(0, [dir('', 0, 0, null, 3.5, 1.5), file(1, 'a', 'd:', 0.6, 0.6), file(2, 'b', 'd:', 1.6, 0.6)]);
@@ -152,8 +152,11 @@ test('player encoding round-trips positions and flags moved nodes', async () => 
   const r = { b: new Uint8Array(Buffer.from(p.data, 'base64')), p: 0 };
   const s = pdNew(p.kinds.length);
   pdFrame(r, s, null);
-  const moved: number[] = [];
-  pdFrame(r, s, moved);
+  assert.equal(pdChecksum(s), p.sums[0], 'checksum frame 0');
+  const moved: number[] = [], dist: number[] = [];
+  pdFrame(r, s, moved, dist);
+  assert.equal(pdChecksum(s), p.sums[1], 'checksum frame 1');
+  close(dist[0], 2);
   assert.equal(r.p, r.b.length);
   assert.equal(p.kinds, 'dfff');
   assert.deepEqual(moved, [1]);
@@ -161,4 +164,73 @@ test('player encoding round-trips positions and flags moved nodes', async () => 
   assert.equal(s.live[2], 0, 'b removed');
   assert.equal(s.f[4][3], 1, 'c is a ghost');
   assert.equal(st.list[s.f[7][3]], 'c');
+});
+
+test('survivors are matched by cid: a delete+add rename still pays for its jump', () => {
+  // followRenames=false: the strategy gives the renamed file a new id (f:2), the Runner's cid keeps f:1
+  const acc = new MetricsAccumulator();
+  const root = dir('', 0, 0, null, 4, 1);
+  root.cid = root.id;
+  const a = { ...file(1, 'a', 'd:', 0, 0), cid: 'f:1' };
+  const b = { ...file(2, 'b', 'd:', 3, 0), cid: 'f:1' };
+  const ghost = file(1, 'a', 'd:', 0, 0, true); // no cid
+  acc.push(frame(0, [root, a]));
+  const s = acc.push(frame(1, [root, ghost, b]))!;
+  assert.equal(s.files.survivors, 1);
+  assert.equal(s.files.moved, 1);
+  close(s.files.mean, 3);
+  assert.equal(s.structural, true, 'path changed under the same identity');
+});
+
+test('moveDistances matches by cid and reports distance keyed by the current id', async () => {
+  const { moveDistances, moveTier, MOVE_TIERS } = await import('../src/render/svg.ts');
+  const f0 = frame(0, [{ ...file(1, 'a', 'd:', 0, 0), cid: 'f:1' }, { ...file(5, 'x', 'd:', 0, 1), cid: 'f:5' }]);
+  const f1 = frame(1, [{ ...file(2, 'b', 'd:', 3, 4), cid: 'f:1' }, { ...file(5, 'x', 'd:', 0, 1), cid: 'f:5' }]);
+  const m = moveDistances(f0, f1);
+  assert.deepEqual([...m.entries()], [['f:2', 5]]);
+  assert.equal(moveTier(0.5), 0);
+  assert.equal(moveTier(MOVE_TIERS[0]), 1);
+  assert.equal(moveTier(1e9), MOVE_TIERS.length);
+});
+
+test('horizon compares frames K apart and needs at least two pairs', () => {
+  const run = (n: number) => {
+    const acc = new MetricsAccumulator();
+    // the file moves one cell at frames 150 and 300; the root never moves
+    for (let i = 0; i < n; i++) acc.push(frame(i, [dir('', 0, 0, null, 4, 1), file(1, 'a', 'd:', Math.floor(i / 150), 0)]));
+    return acc.summary();
+  };
+  const r = run(301);
+  assert.deepEqual(r.horizon.map((h) => h.k), [100]);
+  const h = r.horizon[0];
+  assert.equal(h.pairs, 3); // 0-100 (still), 100-200 (moved), 200-300 (moved)
+  close(h.meanMovedFrac, (0 + 0.5 + 0.5) / 3);
+  close(h.meanShift, (0 + 0.5 + 0.5) / 3);
+  assert.deepEqual(run(200).horizon, [], 'one pair only: omitted');
+  assert.equal(run(201).horizon[0].pairs, 2);
+});
+
+test('normRanks leaves NaN out of the ranking', async () => {
+  const { normRanks } = await import('../src/report/columns.ts');
+  const r = normRanks([3, NaN, 1, 2], 'low');
+  assert.ok(Number.isNaN(r[1]));
+  assert.deepEqual([r[0], r[2], r[3]], [1, 0, 0.5]);
+  assert.deepEqual(normRanks([NaN, 7], 'high'), [NaN, 0]);
+});
+
+test('followRenames=false pays for a cross-directory rename like followRenames=true (Runner cid)', async () => {
+  const { Runner } = await import('../src/engine.ts');
+  const { getStrategy } = await import('../src/strategies/index.ts');
+  const { A, R, hist } = await import('./helpers.ts');
+  // a/x.ts moves to b/x.ts: a real relocation in every strategy
+  const h = hist([[A('a/x.ts'), A('a/y.ts'), A('b/z.ts')], [R('a/x.ts', 'b/x.ts')]]);
+  const run = (followRenames: boolean) => {
+    const acc = new MetricsAccumulator();
+    new Runner(h, getStrategy('tombstone'), { followRenames }, 1000).run((f) => acc.push(f));
+    return acc.summary();
+  };
+  const on = run(true), off = run(false);
+  assert.ok(on.files.max > 0, 'the renamed file moved');
+  assert.equal(off.files.movedNodeSteps, on.files.movedNodeSteps);
+  close(off.files.max, on.files.max);
 });

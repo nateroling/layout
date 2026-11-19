@@ -7,11 +7,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractHistory } from '../src/git/extract.ts';
+import { DEFAULT_CACHE_DIR, EXTRACTOR_VERSION, extractHistory, loadHistory } from '../src/git/extract.ts';
 import { ancestors, applyCommit, emptyTree } from '../src/model/tree.ts';
 import type { Change, History, TreeState } from '../src/types.ts';
 
@@ -223,6 +223,19 @@ test('root commit is diffed regardless of user config (log.showRoot=false)', (t)
     }
   }
   assertTreeMatches(replay(h), repo, 'HEAD');
+});
+
+test('history cache: keyed by extractor version, default dir anchored at the project root', (t) => {
+  assert.equal(DEFAULT_CACHE_DIR, join(ROOT, '.cache'));
+  const repo = tinyRepo(t);
+  write(repo, 'a.txt', 'a\n');
+  commit(repo, 'root', 0);
+  const cache = mkdtempSync(join(tmpdir(), 'gl-cache-'));
+  t.after(() => rmSync(cache, { recursive: true, force: true }));
+  const h = loadHistory(repo, { cacheDir: cache, name: 'tiny' });
+  const files = readdirSync(cache);
+  assert.deepEqual(files, [`tiny-${h.head.slice(0, 12)}-x${EXTRACTOR_VERSION}.history.json`]);
+  assert.deepEqual(loadHistory(repo, { cacheDir: cache, name: 'tiny' }), h, 'cache hit returns the same history');
 });
 
 // ---- real and synthetic fixtures ----

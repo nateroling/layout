@@ -23,8 +23,8 @@
 //   own size, so both modes grow them the same way: ceil(required * growth).
 
 import type { GeoHooks, GeoOptions, LDir } from '../geometry/treev.ts';
-import { ancestors } from '../model/tree.ts';
-import type { Options } from '../types.ts';
+import { ancestors, cmp } from '../model/tree.ts';
+import type { OptionSchema, Options } from '../types.ts';
 
 export interface Reservation {
   cols: number; // 0 = not yet reserved
@@ -41,6 +41,15 @@ export interface ReserveOptions {
   slack: number; // initial headroom fraction, e.g. 0.25
   growth: number; // growth factor when a reservation is exceeded, e.g. 1.5
   growthMode: GrowthMode;
+}
+
+/** Options of the reservation helper; `slack` default differs per strategy (tombstone: 0 = off). */
+export function reserveSchema(d: { slack: number }): OptionSchema {
+  return {
+    slack: { type: 'number', default: d.slack, min: 0, doc: 'initial headroom fraction of a new reservation' },
+    growth: { type: 'number', default: 1.5, min: 1, doc: 'factor applied when a reservation is exceeded' },
+    growthMode: { type: 'enum', values: ['multiply', 'additive'], default: 'multiply', doc: 'how an overflowing band grows (see reserve.ts)' },
+  };
 }
 
 export function reserveOptions(o: Options, base: { slack: number; growth: number }): ReserveOptions {
@@ -78,9 +87,10 @@ function entry(res: Reservations, path: string): Reservation {
 }
 
 /**
- * Hooks for step(): consult and update the reservations during a full measure().
- * Strategies use updateReservations() instead (same result, incremental); this is
- * kept as the reference the tests compare against.
+ * TEST-ONLY REFERENCE: not used by any strategy. Hooks that consult and update the
+ * reservations during a full measure() — the obvious O(files) formulation. Strategies
+ * call updateReservations() (same result, incremental); test/strategies.test.ts checks
+ * the two agree commit by commit.
  */
 export function growingHooks(res: Reservations, ro: ReserveOptions, g: GeoOptions): GeoHooks {
   return {
@@ -126,8 +136,9 @@ export interface DirShape {
  * subtree contributes exactly `res.width`. Only directories whose own slots or
  * child list changed (`dirty`) and their ancestors need re-measuring, deepest
  * first. Applies the very same arithmetic as measure() (same child order), so
- * the reservations are identical to a full pass: O(dirty * depth) per commit
- * instead of O(files).
+ * the reservations are identical to a full pass. Work is O(dirty * depth) shape()
+ * calls per commit instead of O(files) (provided `shape` itself is cheap: slack keeps a
+ * persistent child index, tombstone reads its own per-directory lists).
  */
 export function updateReservations(
   res: Reservations,
@@ -144,7 +155,7 @@ export function updateReservations(
   }
   const depth = (p: string) => (p === '' ? 0 : p.split('/').length);
   const list = [...todo].map((p) => ({ p, d: depth(p) }));
-  list.sort((a, b) => b.d - a.d || (a.p < b.p ? -1 : a.p > b.p ? 1 : 0));
+  list.sort((a, b) => b.d - a.d || cmp(a.p, b.p));
   for (const { p } of list) {
     const sh = shape(p);
     if (!sh) continue; // directory gone
