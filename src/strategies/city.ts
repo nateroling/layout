@@ -25,7 +25,7 @@
 
 import { defaultsOf, type Strategy } from '../engine.ts';
 import { geoSchema } from '../geometry/treev.ts';
-import { cmp, groupTree } from '../model/tree.ts';
+import { cmp, dirname, groupTree } from '../model/tree.ts';
 import type { FileEntry, LayoutNode, OptionSchema, TreeState } from '../types.ts';
 
 interface CDir {
@@ -93,7 +93,12 @@ const lotOffset = (d: CDir, g: Geo) => ({
 const geo = geoSchema();
 const schema: OptionSchema = { cell: geo.cell, pad: geo.pad, hgap: { ...geo.hgap, doc: 'gap between columns and rows of a district' } };
 
-function makeCity(name: string, description: string, cellOf: (k: number) => [number, number]): Strategy<CityState> {
+/** Where child cell k of directory `path` goes, as [col, row] (negative = left/up of the lot). */
+type CellFn = (s: CityState, path: string, k: number) => [number, number];
+/** Which way a district grows: +1 = right/down, -1 = left/up. */
+type OrientFn = (s: CityState, path: string) => { x: number; y: number };
+
+function makeCity(name: string, description: string, cellOf: CellFn, orient: OrientFn): Strategy<CityState> {
   return {
     name,
     description,
@@ -159,12 +164,19 @@ function makeCity(name: string, description: string, cellOf: (k: number) => [num
         }
         return at;
       };
+      const colWidth = (d: CDir, c: number) => (c < 0 ? d.colN[-c - 1] : d.colP[c]);
+      const rowHeight = (d: CDir, r: number) => (r < 0 ? d.rowN[-r - 1] : d.rowP[r]);
       const rec = (p: string, x: number, y: number, parent: string | null) => {
         const d = s.dirs.get(p)!;
         const b = blockSize(d, g);
+        const o = orient(s, p);
         nodes.push({ id: `d:${p}`, kind: 'dir', path: p, parent, x, y, w: b.w, h: b.h });
         const cx = edges(d.colP, d.colN, x + g.pad), ry = edges(d.rowP, d.rowN, y + g.pad);
         const byId = new Map((fileKids.get(p) ?? []).map((f) => [f.id, f]));
+        // The lot hugs the corner of its cell facing the centre; files fill away from it.
+        const lot = lotSize(d, g);
+        const lx = o.x < 0 ? cx.get(0)! + d.colP[0] - lot.w : cx.get(0)!;
+        const ly = o.y < 0 ? ry.get(0)! + d.rowP[0] - lot.h : ry.get(0)!;
         d.slots.forEach((id, i) => {
           if (id === null) return;
           const f = byId.get(id)!;
@@ -173,8 +185,8 @@ function makeCity(name: string, description: string, cellOf: (k: number) => [num
             kind: 'file',
             path: f.path,
             parent: `d:${p}`,
-            x: cx.get(0)! + (i % d.pcols) * g.cell + inset,
-            y: ry.get(0)! + Math.floor(i / d.pcols) * g.cell + inset,
+            x: (o.x < 0 ? lx + lot.w - ((i % d.pcols) + 1) * g.cell : lx + (i % d.pcols) * g.cell) + inset,
+            y: (o.y < 0 ? ly + lot.h - (Math.floor(i / d.pcols) + 1) * g.cell : ly + Math.floor(i / d.pcols) * g.cell) + inset,
             w: box,
             h: box,
             size: f.size,
@@ -183,12 +195,13 @@ function makeCity(name: string, description: string, cellOf: (k: number) => [num
           });
         });
         // A child hugs the side of its cell nearest the lot (right/bottom in negative
-        // columns/rows), so it only moves when space opens between it and the centre.
+        // columns/rows, and in column/row 0 of a district that grows left/up), so it only
+        // moves when space opens between it and the centre.
         for (const [k, cell] of [...d.cells].sort((a, b) => a[1] - b[1])) {
-          const [col, row] = cellOf(cell);
+          const [col, row] = cellOf(s, p, cell);
           const kb = blockSize(s.dirs.get(k)!, g);
-          const kx = col < 0 ? cx.get(col)! + d.colN[-col - 1] - kb.w : cx.get(col)!;
-          const ky = row < 0 ? ry.get(row)! + d.rowN[-row - 1] - kb.h : ry.get(row)!;
+          const kx = col < 0 || (col === 0 && o.x < 0) ? cx.get(col)! + colWidth(d, col) - kb.w : cx.get(col)!;
+          const ky = row < 0 || (row === 0 && o.y < 0) ? ry.get(row)! + rowHeight(d, row) - kb.h : ry.get(row)!;
           rec(k, kx, ky, `d:${p}`);
         }
       };
@@ -204,17 +217,42 @@ function makeCity(name: string, description: string, cellOf: (k: number) => [num
 export const city = makeCity(
   'city',
   'Online: stretchable nested grid growing right and down. Districts keep their cell; columns/rows only widen, so blocks slide outward but never jump. Holes are reused, nothing shrinks.',
-  shellCell,
+  (_s, _p, k) => shellCell(k),
+  () => ({ x: 1, y: 1 }),
 );
 
 export const metro = makeCity(
   'metro',
   'Online: city grown from the centre. Each district keeps its cell on a square spiral around its file lot; columns/rows only widen, pushing everything beyond them away from the centre.',
-  spiralCell,
+  metroCell,
+  metroOrient,
 );
 
+/**
+ * metro: the root spirals in all four directions; every other district is a city mirrored to
+ * face away from the centre. Its orientation comes from the cell it sits in (left of its
+ * parent's lot -> grows left, above -> grows up; in the lot's own column/row it inherits the
+ * parent's direction). Cells never change, so neither does a district's orientation.
+ */
+function metroCell(s: CityState, path: string, k: number): [number, number] {
+  return mirrored(path, k, metroOrient(s, path));
+}
+function mirrored(path: string, k: number, o: { x: number; y: number }): [number, number] {
+  if (path === '') return spiralCell(k);
+  const [c, r] = shellCell(k);
+  return [o.x * c, o.y * r];
+}
+/** One walk up the ancestors (O(depth)): each level's cell is mirrored by the level above. */
+function metroOrient(s: CityState, path: string): { x: number; y: number } {
+  if (path === '') return { x: 1, y: 1 };
+  const parent = dirname(path);
+  const po = metroOrient(s, parent);
+  const [c, r] = mirrored(parent, s.dirs.get(parent)!.cells.get(path)!, po);
+  return { x: c ? Math.sign(c) : po.x, y: r ? Math.sign(r) : po.y };
+}
+
 /** Step 4 of step(): widen columns/rows to fit their contents (never shrink). */
-export function ratchet(s: CityState, g: Geo, cellOf: (k: number) => [number, number]): void {
+export function ratchet(s: CityState, g: Geo, cellOf: CellFn): void {
   const paths = [...s.dirs.keys()].sort((a, b) => depth(b) - depth(a) || cmp(a, b));
   const grow = (pos: number[], neg: number[], i: number, v: number) => {
     const a = i < 0 ? neg : pos;
@@ -225,7 +263,7 @@ export function ratchet(s: CityState, g: Geo, cellOf: (k: number) => [number, nu
   for (const p of paths) {
     const d = s.dirs.get(p)!;
     const fit = (cell: number, w: number, h: number) => {
-      const [c, r] = cellOf(cell);
+      const [c, r] = cellOf(s, p, cell);
       grow(d.colP, d.colN, c, w);
       grow(d.rowP, d.rowN, r, h);
     };
