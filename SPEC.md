@@ -83,6 +83,8 @@ child to the sibling before it (`LayoutNode.link`; the player carries it in the 
 | slack | `growth` | number >= 1 | 1.5 | factor when a reservation is exceeded |
 | slack | `growthMode` | multiply\|additive | multiply | band growth: `ceil(required * growth)`, or headroom only where growth originates (see `reserve.ts`) |
 | city, metro, metro-* | `cell`, `pad`, `hgap` | geometry | as above | the only geometry keys city takes (`hgap` = gap between its columns and rows) |
+| city, metro | `squeeze` | none\|pack\|organic | none | optional compaction pass after the grid placement (`src/strategies/squeeze.ts`): each district slides toward its parent's lot; `pack` = axis slides (x, y, x), `organic` = straight at the lot centre, then the axis slides. Stateful: the squeezed offset from the parent is kept and the next commit starts from it; overlaps from growth push a district straight back out; the root stays pinned |
+| city, metro | `squeezeRate` | number >= 0 | 1 | max inward slide per commit (layout units); 0 = close every gap at once |
 | tombstone | `reuse` | boolean | true | new files infill the earliest ghost slot; a returning directory revives in place |
 | tombstone | `compactRatio` | number 0..1 | 0.5 | compact a live directory whose ghost fraction exceeds this (1 = never) |
 | tombstone | `ghostTtl` | integer >= 0 | 0 | a ghost older than this many commits compacts its directory (0 = forever) |

@@ -27,6 +27,7 @@ import { defaultsOf, type Strategy } from '../engine.ts';
 import { geoSchema } from '../geometry/treev.ts';
 import { cmp, dirname, groupTree } from '../model/tree.ts';
 import type { FileEntry, LayoutNode, OptionSchema, TreeState } from '../types.ts';
+import { newSqueeze, squeezeFrame, squeezeStep, type Anchor, type SqueezeMode, type SqueezeState } from './squeeze.ts';
 
 /** A directory's file lot: slots keep their position; holes are reused, earliest first. */
 export interface Lot {
@@ -61,6 +62,7 @@ interface CDir {
 
 export interface CityState {
   dirs: Map<string, CDir>; // live directories only
+  sq: SqueezeState; // squeeze pass (empty when squeeze=none)
 }
 
 /** Cell index -> [col, row] in square-shell order (city: grows right and down). */
@@ -113,6 +115,12 @@ const lotOffset = (d: CDir, g: Geo) => ({
 
 const geo = geoSchema();
 export const schema: OptionSchema = { cell: geo.cell, pad: geo.pad, hgap: { ...geo.hgap, doc: 'gap between columns and rows of a district' } };
+/** city / metro: the grid schema plus the optional squeeze pass (see squeeze.ts). */
+const citySchema: OptionSchema = {
+  ...schema,
+  squeeze: { type: 'enum', default: 'none', values: ['none', 'pack', 'organic'], doc: 'compaction pass after placement: none, pack (axis slides toward the parent lot) or organic (slide straight at it)' },
+  squeezeRate: { type: 'number', default: 1, min: 0, doc: 'squeeze: max inward slide per commit in layout units (0 = all at once)' },
+};
 
 /** Where child cell k of directory `path` goes, as [col, row] (negative = left/up of the lot). */
 type CellFn = (s: CityState, path: string, k: number) => [number, number];
@@ -124,10 +132,10 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
     name,
     description,
     usesFuture: false,
-    schema,
-    defaults: defaultsOf(schema),
+    schema: citySchema,
+    defaults: defaultsOf(citySchema),
     wires: 'none',
-    init: () => ({ dirs: new Map() }),
+    init: () => ({ dirs: new Map(), sq: newSqueeze() }),
 
     step(s, tree, _c, _delta, ctx) {
       const { dirKids, fileKids } = groupTree(tree);
@@ -156,13 +164,27 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
         }
       }
       // 4. Ratchet column widths / row heights, deepest directories first.
-      ratchet(s, geoOf(ctx.options), cellOf);
+      const g = geoOf(ctx.options);
+      ratchet(s, g, cellOf);
+      // 5. Optional squeeze pass on top of the placement.
+      const mode = ctx.options.squeeze as SqueezeMode;
+      if (mode !== 'none') {
+        const { nodes, anchors } = place(s, tree, g);
+        squeezeStep(s.sq, nodes, anchors, mode, Number(ctx.options.squeezeRate), g.hgap, g.pad);
+      }
     },
 
     frame(s, tree, _c, ctx): LayoutNode[] {
-      const g = geoOf(ctx.options);
+      const { nodes, anchors } = place(s, tree, geoOf(ctx.options));
+      return ctx.options.squeeze === 'none' ? nodes : squeezeFrame(s.sq, nodes, anchors);
+    },
+  };
+
+  /** The grid placement (pure): every node, plus each district's lot anchor for the squeeze. */
+  function place(s: CityState, tree: TreeState, g: Geo): { nodes: LayoutNode[]; anchors: Map<string, Anchor> } {
       const { fileKids } = groupTree(tree);
       const nodes: LayoutNode[] = [];
+      const anchors = new Map<string, Anchor>();
       const box = g.cell * 0.8, inset = (g.cell - box) / 2;
       // Column c's left edge and width; negative columns run leftward from column 0.
       const edges = (pos: number[], neg: number[], start: number) => {
@@ -187,6 +209,7 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
         const lot = lotSize(d, g);
         const lx = o.x < 0 ? cx.get(0)! + d.colP[0] - lot.w : cx.get(0)!;
         const ly = o.y < 0 ? ry.get(0)! + d.rowP[0] - lot.h : ry.get(0)!;
+        anchors.set(p, { x: o.x < 0 ? lx + lot.w : lx, y: o.y < 0 ? ly + lot.h : ly, o, lot });
         d.slots.forEach((id, i) => {
           if (id === null) return;
           const f = byId.get(id)!;
@@ -219,9 +242,8 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
       const root = s.dirs.get('')!;
       const o = lotOffset(root, g);
       rec('', -o.x, -o.y, null);
-      return nodes;
-    },
-  };
+      return { nodes, anchors };
+  }
 }
 
 export const city = makeCity(

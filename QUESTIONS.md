@@ -156,3 +156,18 @@ big repos. Seams and warp come next; hex is in between.
 - **warp** shoves (+x or +y, the shorter move); ties go to +x.
 - **pack** candidate order: longer side of the district, then area, then x+y, then y, then x. A newcomer is placed at its arrival
   size (usually tiny), so it can land in a narrow slot and shove neighbours as it grows.
+
+## Squeeze pass (city/metro `squeeze`)
+
+Nate's idea (2026-11-19): place with the plain grid, then compact in a separate stateful pass. Built as options on city and metro
+(`squeeze` = none|pack|organic, `squeezeRate`). Findings on the four public repos: the squeezes are only a little denser than plain
+metro (compactness +5-15%, e.g. ripgrep 0.064 -> 0.068-0.071) and are clearly less stable (moved per tree change 2-4x metro's),
+because a grid-seeded arrangement leaves districts in long rows and a slide toward the parent can only close the gaps in between,
+not reorder anything. metro-pack (packing at placement time) stays both denser and steadier. Calls made:
+- **Where a district slides to**: its parent's lot centre, never past the lot's centre line on an axis. Sliding toward the
+  root instead would pull subtrees across the city.
+- **New districts start at their grid cell** and slide in from there; afterwards the grid position is ignored (the kept offset wins).
+- **Gradual** (`squeezeRate=1` default) vs instant (0): gradual means many small moves over many commits, which the per-commit
+  metrics punish; instant has fewer, bigger moves. Default kept at 1 because "shrink gaps gradually" was the brief.
+- **Overlap from growth** pushes the district back out along the line it came in on (not the shortest way out), so it never moves sideways.
+- Rectangles only: "organic" means districts are no longer aligned to rows/columns, not that they are deformed shapes.
