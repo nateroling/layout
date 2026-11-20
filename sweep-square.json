@@ -78,18 +78,10 @@
       "options": {}
     },
     {
-      "label": "metro + organic squeeze",
+      "label": "metro + slide squeeze",
       "strategy": "metro",
       "options": {
-        "squeeze": "organic"
-      }
-    },
-    {
-      "label": "metro + organic squeeze (instant)",
-      "strategy": "metro",
-      "options": {
-        "squeeze": "organic",
-        "squeezeRate": 0
+        "squeeze": "slide"
       }
     },
     {
@@ -100,25 +92,24 @@
       }
     },
     {
-      "label": "city + organic squeeze",
-      "strategy": "city",
+      "label": "metro + organic warp",
+      "strategy": "metro",
       "options": {
         "squeeze": "organic"
       }
     }
   ],
   "title": "squarer arrangements and compact grids",
-  "about": "<p><b>What this compares.</b> The four public repos from the stability report, laid out by squarish layouts on one slider. Pick a strategy group to change what nested and spiral run with; city and metro are their own strategies and appear in every group.</p>\n<ul>\n<li><b>nested</b>: Code City districts. A folder is a rectangle holding its file grid and its subfolders' rectangles, re-packed close to square on every commit.</li>\n<li><b>spiral</b>: every folder's subfolders coil around it in a square spiral, in order, re-computed on every commit. Wires follow the coil.</li>\n<li><b>city</b>: a stretchable nested grid. Each folder is a district on its own grid; its subfolders take cells around its file lot and keep them. Columns and rows only ever widen, so growth pushes what lies beyond it outward and nothing is re-packed. Holes left by deletions are reused; nothing shrinks. Grows right and down from the top-left corner.</li>\n<li><b>metro</b>: city grown from the centre. The file lot sits in the middle of its district and subfolders take cells on a square spiral around it, in all four directions. Columns and rows still only widen, and every push points away from the centre. The root's file lot is pinned at the origin.</li>\n</ul>\n<p>Strategies for nested and spiral: <b>recompute birth</b> (fresh each commit), <b>tombstone</b> (deleted files keep their slot until a folder is half empty), <b>tombstone keep</b> (holes are refilled, folders never shrink).</p>\n<p><b>Compact grids</b> (first group).</p>\n<ul>\n<li><b>city</b>, <b>metro</b>: the current stretchable square grids. A column or row is as wide as the biggest thing it has ever held, across the whole district.</li>\n<li><b>metro-seams</b> (per-district seams): columns still share a width, but every column stacks its own cells with their own heights, like masonry. A tall folder only pushes its own column down.</li>\n<li><b>metro-hex</b>: brick-bond rows (the rectangle version of a hex grid: odd rows are staggered half a cell, six neighbours). Rows share a height, each row has its own widths; subfolders fill hex rings.</li>\n<li><b>metro-warp</b> (Townscaper-style irregular grid): every cell keeps its grid neighbours but has its own size, so seams bend around a big cell instead of running straight across.</li>\n<li><b>metro-pack</b> (skyline packer): no grid. A new folder takes the free spot that keeps its district smallest and squarest; when a block grows into a neighbour, the neighbour is shoved outward.</li>\n</ul>\n<p>The root of the four new ones is a pinwheel: the root's files sit at the origin and four arms run off its sides (right arm grows down, bottom grows left, left grows up, top grows right), so arms never collide. A new top-level folder joins whichever arm keeps the city smallest and squarest.</p>\n<p><b>Squeeze passes</b> (first group): plain metro or city places everything on its grid, then a separate, stateful pass slides each district toward its parent's file lot until it touches something. <b>organic</b> slides straight at the lot centre and then slips along whatever stopped it; <b>pack squeeze</b> only slides along the axes. A district moves at most 1 unit per commit (the instant version closes every gap at once), keeps its squeezed spot from commit to commit, and is pushed straight back out when something grows into it. The root stays pinned.</p>",
+  "about": "<p><b>What this compares.</b> The four public repos from the stability report, laid out by squarish layouts on one slider. Pick a strategy group to change what nested and spiral run with; city and metro are their own strategies and appear in every group.</p>\n<ul>\n<li><b>nested</b>: Code City districts. A folder is a rectangle holding its file grid and its subfolders' rectangles, re-packed close to square on every commit.</li>\n<li><b>spiral</b>: every folder's subfolders coil around it in a square spiral, in order, re-computed on every commit. Wires follow the coil.</li>\n<li><b>city</b>: a stretchable nested grid. Each folder is a district on its own grid; its subfolders take cells around its file lot and keep them. Columns and rows only ever widen, so growth pushes what lies beyond it outward and nothing is re-packed. Holes left by deletions are reused; nothing shrinks. Grows right and down from the top-left corner.</li>\n<li><b>metro</b>: city grown from the centre. The file lot sits in the middle of its district and subfolders take cells on a square spiral around it, in all four directions. Columns and rows still only widen, and every push points away from the centre. The root's file lot is pinned at the origin.</li>\n</ul>\n<p>Strategies for nested and spiral: <b>recompute birth</b> (fresh each commit), <b>tombstone</b> (deleted files keep their slot until a folder is half empty), <b>tombstone keep</b> (holes are refilled, folders never shrink).</p>\n<p><b>Compact grids</b> (first group).</p>\n<ul>\n<li><b>city</b>, <b>metro</b>: the current stretchable square grids. A column or row is as wide as the biggest thing it has ever held, across the whole district.</li>\n<li><b>metro-seams</b> (per-district seams): columns still share a width, but every column stacks its own cells with their own heights, like masonry. A tall folder only pushes its own column down.</li>\n<li><b>metro-hex</b>: brick-bond rows (the rectangle version of a hex grid: odd rows are staggered half a cell, six neighbours). Rows share a height, each row has its own widths; subfolders fill hex rings.</li>\n<li><b>metro-warp</b> (Townscaper-style irregular grid): every cell keeps its grid neighbours but has its own size, so seams bend around a big cell instead of running straight across.</li>\n<li><b>metro-pack</b> (skyline packer): no grid. A new folder takes the free spot that keeps its district smallest and squarest; when a block grows into a neighbour, the neighbour is shoved outward.</li>\n</ul>\n<p>The root of the four new ones is a pinwheel: the root's files sit at the origin and four arms run off its sides (right arm grows down, bottom grows left, left grows up, top grows right), so arms never collide. A new top-level folder joins whichever arm keeps the city smallest and squarest.</p>\n<p><b>Organic warp</b> (first group): plain metro or city places everything on its grid, then a Townscaper-style mesh is laid over the whole city. Mesh cells that hold files keep their size; empty cells shrink to about a third, and a spring relaxation finds the squished, irregular shape in between. Every block is drawn through that mesh, so platforms and file cells become irregular quads and empty space collapses. The mesh is remembered from commit to commit and each vertex moves at most 1 unit per commit, so the city settles gradually; the root corner is pinned and the mesh never folds, so nothing that was apart can overlap. Movement outlines only show moves on the underlying grid, not the warp's slow drift.</p>\n<p><b>Slide and pack squeezes</b>: instead of warping, each district slides toward its parent's file lot until it touches something (slide: straight at it; pack: along the axes only), at most 1 unit per commit.</p>",
   "compare": [
     {
-      "label": "compact: grid variants vs squeeze passes",
+      "label": "compact: grids, squeezes and the organic warp",
       "configs": [
         "metro",
+        "metro + organic warp",
         "metro-pack",
-        "metro + organic squeeze",
-        "metro + organic squeeze (instant)",
+        "metro + slide squeeze",
         "metro + pack squeeze",
-        "city + organic squeeze",
         "metro-seams"
       ]
     },

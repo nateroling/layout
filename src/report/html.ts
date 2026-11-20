@@ -61,7 +61,7 @@ interface Plan {
 
 function playerCost(c: ConfigResult, L: number): number {
   const p = c.players[L];
-  return p.data.length + p.kinds.length + p.dirPath.length * 4 + p.dirParent.length * 4 + p.frames.length * 4;
+  return p.data.length + (p.mesh?.length ?? 0) + p.kinds.length + p.dirPath.length * 4 + p.dirParent.length * 4 + p.frames.length * 4;
 }
 
 function plan(fixtures: FixtureResult[], budget: number, noFilm = false): Plan {
@@ -442,7 +442,7 @@ function client(): void {
       pdFrame(r, st, null);
     }
     if (r.p !== r.b.length) throw new Error('decode length mismatch ' + r.p + ' != ' + r.b.length);
-    const v = { fx: fx, c: c, p: p, n: n, bytes: r.b, snaps: snaps, offs: offs };
+    const v = { fx: fx, c: c, p: p, n: n, bytes: r.b, snaps: snaps, offs: offs, meshes: p.mesh ? pdMeshes(p.mesh, p.meshCell, p.frames.length) : null };
     cache.set(k, v);
     return v;
   }
@@ -484,6 +484,16 @@ function client(): void {
     g.setTransform(s, 0, 0, s, -view.x * s, -view.y * s);
     const lw = 1 / s;
     const kinds = P.p.kinds, par = P.p.dirParent;
+    // Outline of node k: its rect, or (warped configs) its rect pushed through this frame's mesh.
+    const M = P.meshes ? P.meshes[i] : null;
+    const shape = (k: number) => {
+      const x = F[0][k] / 100, y = F[1][k] / 100, w = F[2][k] / 100, h = F[3][k] / 100;
+      if (!M) return g.rect(x, y, w, h);
+      const q = warpPoly(M, x, y, w, h);
+      g.moveTo(q[0], q[1]);
+      for (let e = 2; e < q.length; e += 2) g.lineTo(q[e], q[e + 1]);
+      g.closePath();
+    };
     const meta = P.fx.metas[P.p.frames[i]];
     const commit = meta[0], total = P.fx.used;
     // wires
@@ -514,31 +524,28 @@ function client(): void {
     g.lineWidth = Math.max(lw, 0.08);
     for (let k = 0; k < st.n; k++) {
       if (!st.live[k] || kinds[k] !== 'd') continue;
-      const x = F[0][k] / 100, y = F[1][k] / 100, w = F[2][k] / 100, h = F[3][k] / 100;
       if (F[4][k] & 1) {
         if (!opts.ghosts) continue;
         g.setLineDash([3 * lw, 2 * lw]);
         g.strokeStyle = PAL.ghost;
-        g.strokeRect(x, y, w, h);
+        g.beginPath(); shape(k); g.stroke();
         g.setLineDash([]);
         g.strokeStyle = PAL.platformEdge;
       } else {
-        g.fillRect(x, y, w, h);
-        g.strokeRect(x, y, w, h);
+        g.beginPath(); shape(k); g.fill(); g.stroke();
       }
     }
     // files
     for (let k = 0; k < st.n; k++) {
       if (!st.live[k] || kinds[k] !== 'f') continue;
-      const x = F[0][k] / 100, y = F[1][k] / 100, w = F[2][k] / 100, h = F[3][k] / 100;
       if (F[4][k] & 1) {
         if (!opts.ghosts) continue;
         g.strokeStyle = PAL.ghost;
         g.lineWidth = lw;
-        g.strokeRect(x, y, w, h);
+        g.beginPath(); shape(k); g.stroke();
       } else {
         g.fillStyle = COL[recencyBucket(commit - F[5][k], total)][F[6][k] % NS];
-        g.fillRect(x, y, w, h);
+        g.beginPath(); shape(k); g.fill();
       }
     }
     const mv = opts.movedList || S.moved, md = opts.movedDist || S.dist;
@@ -548,7 +555,7 @@ function client(): void {
         g.strokeStyle = MC[t];
         g.lineWidth = Math.max(MW[t] * 1.4 * lw, 0.07 * MW[t]);
         g.beginPath();
-        for (let j = 0; j < mv.length; j++) if (tierOf(md[j]) === t) { const k = mv[j]; g.rect(F[0][k] / 100, F[1][k] / 100, F[2][k] / 100, F[3][k] / 100); }
+        for (let j = 0; j < mv.length; j++) if (tierOf(md[j]) === t) { const k = mv[j]; shape(k); }
         g.stroke();
       }
     }
@@ -649,13 +656,22 @@ function client(): void {
       draw4();
     }
     // bbox of everything drawn, and the area of live file cells (a file box is 0.8 of its cell)
-    function frameBox(st: any, kinds: string) {
+    function frameBox(st: any, kinds: string, M: any) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, cells = 0;
       const F = st.f;
       for (let k = 0; k < st.n; k++) {
         if (!st.live[k]) continue;
-        x0 = Math.min(x0, F[0][k]); y0 = Math.min(y0, F[1][k]);
-        x1 = Math.max(x1, F[0][k] + F[2][k]); y1 = Math.max(y1, F[1][k] + F[3][k]);
+        if (M && kinds[k] === 'd') {
+          // warped: the bbox of the platform's warped outline (x100 units like the rest)
+          const q = warpPoly(M, F[0][k] / 100, F[1][k] / 100, F[2][k] / 100, F[3][k] / 100);
+          for (let e = 0; e < q.length; e += 2) {
+            x0 = Math.min(x0, q[e] * 100); x1 = Math.max(x1, q[e] * 100);
+            y0 = Math.min(y0, q[e + 1] * 100); y1 = Math.max(y1, q[e + 1] * 100);
+          }
+        } else if (!M) {
+          x0 = Math.min(x0, F[0][k]); y0 = Math.min(y0, F[1][k]);
+          x1 = Math.max(x1, F[0][k] + F[2][k]); y1 = Math.max(y1, F[1][k] + F[3][k]);
+        }
         if (kinds[k] === 'f' && !(F[4][k] & 1)) cells += (F[2][k] / 80) * (F[3][k] / 80);
       }
       return x1 > x0 ? { w: (x1 - x0) / 100, h: (y1 - y0) / 100, cells: cells } : { w: 0, h: 0, cells: 0 };
@@ -679,7 +695,7 @@ function client(): void {
         const sc = same ? s : Math.min(cw / vp.w, ch / vp.h);
         const view = { s: sc, x: vp.x - (cw / sc - vp.w) / 2, y: vp.y - (ch / sc - vp.h) / 2 };
         const r = draw(c.cv, c.P, i, view, { moved: $('#cmoved').checked, ghosts: true });
-        const b = frameBox(r.S.st, c.P.p.kinds);
+        const b = frameBox(r.S.st, c.P.p.kinds, c.P.meshes ? c.P.meshes[i] : null);
         const side = Math.max(b.w, b.h);
         c.cap.textContent = Math.round(b.w) + ' × ' + Math.round(b.h) + ' · aspect ' + (b.h ? (b.w / b.h).toFixed(2) : '–') + ' · uses ' + (side ? Math.round((100 * b.w * b.h) / (side * side)) : 0) + '% of its square · files fill ' + (b.w * b.h ? ((100 * b.cells) / (b.w * b.h)).toFixed(1) : 0) + '% of the box';
       });
@@ -922,7 +938,7 @@ export function buildReport(fixtures: FixtureResult[], o: ReportOptions): Report
           strategy: c.strategy,
           vp: c.playerViewport,
           filmVp: c.film.viewport,
-          player: { frames: pl.frames, kinds: pl.kinds, dirPath: pl.dirPath, dirParent: pl.dirParent, data: pl.data, wires: pl.wires },
+          player: { frames: pl.frames, kinds: pl.kinds, dirPath: pl.dirPath, dirParent: pl.dirParent, data: pl.data, wires: pl.wires, ...(pl.mesh ? { mesh: pl.mesh, meshCell: pl.meshCell } : {}) },
           check: pl.sums ? evenly(pl.frames.length, CHECK_FRAMES).map((i) => [i, pl.sums[i]]) : [],
         };
       }),

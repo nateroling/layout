@@ -171,3 +171,22 @@ not reorder anything. metro-pack (packing at placement time) stays both denser a
   metrics punish; instant has fewer, bigger moves. Default kept at 1 because "shrink gaps gradually" was the brief.
 - **Overlap from growth** pushes the district back out along the line it came in on (not the shortest way out), so it never moves sideways.
 - Rectangles only: "organic" means districts are no longer aligned to rows/columns, not that they are deformed shapes.
+
+## Organic warp (`squeeze=organic`)
+
+Nate (2026-11-19): "organic" = not square, squished like Townscaper's grid. Built as a mesh warp over plain metro/city.
+Results (four public repos): densest of everything so far on average (compactness ripgrep 0.139 vs metro 0.064 and metro-pack 0.090;
+vue-core 0.116 vs 0.051 / 0.090; express 0.082 vs 0.038 / 0.079), with mean shift no worse than metro and smaller big jumps, but it
+moves a larger share of things on each tree change (7-16% vs metro's ~4-5%): when a district grows, the mesh around it
+re-settles a little. Calls made:
+- **What counts as full**: a mesh cell holding any file. Platform areas without files (district padding, empty lots) are empty
+  and collapse. Wanting more air around districts would mean counting platform edges too.
+- **warpMin 0.3, warpCell 4**: smaller warpMin squeezes harder but makes slivers (refused moves) more common; bigger cells look
+  less organic.
+- **Dead zone 0.15** (a vertex pulled less than that stays put): without it the mesh creeps every commit (50-95% of commits moved
+  something); with it ~1-2%.
+- **Lattice only grows**; new vertices copy their nearest neighbour's displacement. A rare fold there is repaired by pushing the new
+  vertices outward, and failing that the mesh resets to square (a one-off jump, never a fold).
+- **Rotation**: vertex (1,0) is held on the x axis so the city can't slowly turn.
+- **Player**: the mesh is sent per frame (sparse deltas, 1/20 unit); the "moved" outlines only show moves on the underlying grid,
+  not the warp's drift. The outer edge of the root platform is extrapolated from the mesh and can look ragged.

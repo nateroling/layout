@@ -70,6 +70,7 @@ export interface LayoutNode {
   h: number;
   ghost?: boolean; // tombstoned: no longer exists but keeps its slot
   link?: string; // dirs: draw this node's wire from here instead of from its parent (spiral: previous sibling)
+  base?: [number, number, number, number]; // warped frames: the unwarped rect (x, y, w, h); x/y/w/h are then the warped shape's bbox
   cid?: string; // set by the Runner on live nodes: identity under rename-following (use for metrics)
   size?: number; // files only
   born?: number; // files only
@@ -84,6 +85,7 @@ export interface Frame {
   nodes: LayoutNode[];
   bbox: { x: number; y: number; w: number; h: number };
   wires?: 'elbow' | 'bus' | 'straight' | 'chain' | 'none'; // how to draw parent -> child wires (default elbow)
+  mesh?: import('./geometry/warp.ts').Mesh; // organic warp: draw each node's `base` rect through this map
 }
 
 export type Options = Record<string, string | number | boolean>;

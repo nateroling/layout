@@ -27,6 +27,7 @@
 // exact code that runs in the browser.
 
 import { sizeBucket } from '../render/svg.ts';
+import { meshMap, warpPoly } from '../geometry/warp.ts';
 import type { Frame } from '../types.ts';
 
 export class StringTable {
@@ -77,6 +78,14 @@ export interface PlayerData {
   bytes: number; // raw byte length (before base64)
   sums: number[]; // per frame: frameChecksum of the encoded geometry
   wires: string; // Frame.wires of the config (elbow | bus | straight | none)
+  /**
+   * Warped configs (Frame.mesh): x/y/w/h above are the unwarped rects (LayoutNode.base), and this
+   * second varint stream holds each frame's mesh: zz(i0), zz(j0), ni, nj, then the number of changed
+   * components and, per change, the gap from the previous changed index (2*(j*ni+i)+c, row-major)
+   * and the zz delta of round(d*20) vs the same vertex in the previous frame (0 if new).
+   */
+  mesh?: string;
+  meshCell?: number;
 }
 
 /**
@@ -99,6 +108,9 @@ export class PlayerEncoder {
   private frames: number[] = [];
   private sums: number[] = [];
   private wires = 'elbow';
+  private meshOut: Bytes | null = null;
+  private meshPrev = new Map<string, number>();
+  private meshCell = 0;
 
   constructor(strings: StringTable) {
     this.strings = strings;
@@ -124,11 +136,12 @@ export class PlayerEncoder {
     for (const n of f.nodes) {
       const key = n.kind === 'dir' ? n.id : n.ghost ? `ghost ${n.id}` : `live ${n.cid ?? n.id}`;
       const i = this.nodeIndex(key, n.kind, n.path, n.parent);
+      const r = f.mesh && n.base ? n.base : [n.x, n.y, n.w, n.h];
       const v = [
-        Math.round(n.x * 100),
-        Math.round(n.y * 100),
-        Math.round(n.w * 100),
-        Math.round(n.h * 100),
+        Math.round(r[0] * 100),
+        Math.round(r[1] * 100),
+        Math.round(r[2] * 100),
+        Math.round(r[3] * 100),
         n.ghost ? 1 : 0,
         n.kind === 'file' ? (n.modified ?? 0) : 0,
         n.kind === 'file' ? sizeBucket(n.size ?? 0) : 0,
@@ -138,6 +151,23 @@ export class PlayerEncoder {
       sum += pdSumTerm(i, v[0], v[1], v[2], v[3], v[4]);
     }
     this.sums.push(sum);
+    if (f.mesh) {
+      const m = f.mesh, o = (this.meshOut ??= new Bytes());
+      this.meshCell = m.s;
+      o.zz(m.i0), o.zz(m.j0), o.push(m.ni), o.push(m.nj);
+      // sparse: most vertices sit still between frames, so only (gap, delta) pairs of changes
+      const ch: number[] = [];
+      for (let j = 0; j < m.nj; j++)
+        for (let i = 0; i < m.ni; i++)
+          for (let c = 0; c < 2; c++) {
+            const k = `${m.i0 + i},${m.j0 + j},${c}`, v = Math.round(m.d[2 * (j * m.ni + i) + c] * 20);
+            const dv = v - (this.meshPrev.get(k) ?? 0);
+            if (dv) ch.push(2 * (j * m.ni + i) + c, dv);
+            this.meshPrev.set(k, v);
+          }
+      o.push(ch.length / 2);
+      for (let e = 0, last = 0; e < ch.length; e += 2) o.push(ch[e] - last), o.zz(ch[e + 1]), (last = ch[e]);
+    }
     const removed: number[] = [];
     for (const i of this.prev.keys()) if (!cur.has(i)) removed.push(i);
     removed.sort((a, b) => a - b);
@@ -187,6 +217,7 @@ export class PlayerEncoder {
       bytes: raw.length,
       sums: this.sums,
       wires: this.wires,
+      ...(this.meshOut ? { mesh: Buffer.from(this.meshOut.buf.subarray(0, this.meshOut.len)).toString('base64'), meshCell: this.meshCell } : {}),
     };
   }
 }
@@ -278,7 +309,32 @@ export function pdChecksum(s: PdState): number {
   return sum;
 }
 
+/** Decode every frame's mesh of a warped config (see PlayerData.mesh). */
+export function pdMeshes(data: string, s: number, frames: number): any[] {
+  const r = { b: b64bytes(data), p: 0 };
+  const prev = new Map();
+  const out: any[] = [];
+  for (let f = 0; f < frames; f++) {
+    const i0 = pdZz(r), j0 = pdZz(r), ni = pdVar(r), nj = pdVar(r);
+    const d = new Array(2 * ni * nj);
+    for (let j = 0; j < nj; j++)
+      for (let i = 0; i < ni; i++)
+        for (let c = 0; c < 2; c++) d[2 * (j * ni + i) + c] = prev.get(i0 + i + ',' + (j0 + j) + ',' + c) || 0;
+    let nc = pdVar(r), at = 0;
+    while (nc-- > 0) {
+      at += pdVar(r);
+      d[at] += pdZz(r);
+      const c = at % 2, v = (at - c) / 2, i = v % ni, j = (v - i) / ni;
+      prev.set(i0 + i + ',' + (j0 + j) + ',' + c, d[at]);
+    }
+    for (let e = 0; e < d.length; e++) d[e] = d[e] / 20;
+    out.push({ s: s, i0: i0, j0: j0, ni: ni, nj: nj, d: d });
+  }
+  if (r.p !== r.b.length) throw new Error('mesh decode length mismatch');
+  return out;
+}
+
 /** Source of the decoder for embedding in a <script>. */
 export function decoderSource(): string {
-  return [pdVar, pdZz, pdNew, pdCopy, pdFrame, pdSumTerm, pdChecksum, b64bytes].map((fn) => fn.toString()).join('\n');
+  return [pdVar, pdZz, pdNew, pdCopy, pdFrame, pdSumTerm, pdChecksum, b64bytes, pdMeshes, meshMap, warpPoly].map((fn) => fn.toString()).join('\n');
 }

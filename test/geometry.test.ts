@@ -18,6 +18,7 @@ import { Runner } from '../src/engine.ts';
 import { bbox } from '../src/geometry/treev.ts';
 import { loadHistory } from '../src/git/extract.ts';
 import { strategies } from '../src/strategies/index.ts';
+import { meshValid } from '../src/geometry/warp.ts';
 import type { Change, Frame, History, LayoutNode, Options } from '../src/types.ts';
 import { A, D, M, R, hist, randomHistory, sample } from './helpers.ts';
 
@@ -45,6 +46,16 @@ const show = (n: LayoutNode) => `${n.id}${n.ghost ? '(ghost)' : ''} ${n.path} [$
 
 /** All violated invariants of one frame (empty = fine). */
 export function geometryErrors(f: Frame): string[] {
+  if (f.mesh) {
+    // Warped frame: the warp is one-to-one when every mesh cell is a convex quad with the
+    // lattice's orientation, so the unwarped rects (base) carry every invariant over.
+    const errs = meshValid(f.mesh) ? [] : ['warp mesh folds'];
+    for (const n of f.nodes) if (!n.base) errs.push(`warped ${show(n)} has no base rect`);
+    if (errs.length) return errs;
+    const plain = f.nodes.map((n) => ({ ...n, x: n.base![0], y: n.base![1], w: n.base![2], h: n.base![3] }));
+    assert.deepEqual(f.bbox, bbox(f.nodes), 'frame bbox');
+    return geometryErrors({ ...f, mesh: undefined, nodes: plain, bbox: bbox(plain) });
+  }
   const errs: string[] = [];
   const byId = new Map<string, LayoutNode>();
   for (const n of f.nodes) {
@@ -200,8 +211,8 @@ const own: Record<string, Options[]> = {
     { slack: 3, growth: 4, order: 'name' },
     { growthMode: 'additive', followRenames: false },
   ],
-  city: [{}, { followRenames: false }, { squeeze: 'pack', squeezeRate: 0 }, { squeeze: 'organic' }],
-  metro: [{}, { followRenames: false }, { squeeze: 'organic', squeezeRate: 0 }, { squeeze: 'pack', squeezeRate: 0.5 }, { squeeze: 'organic', squeezeRate: 3, followRenames: false }],
+  city: [{}, { followRenames: false }, { squeeze: 'pack', squeezeRate: 0 }, { squeeze: 'slide' }, { squeeze: 'organic' }],
+  metro: [{}, { followRenames: false }, { squeeze: 'slide', squeezeRate: 0 }, { squeeze: 'pack', squeezeRate: 0.5 }, { squeeze: 'slide', squeezeRate: 3, followRenames: false }, { squeeze: 'organic' }, { squeeze: 'organic', squeezeRate: 0, warpCell: 2, warpMin: 0.1 }],
   'metro-pack': [{}, { followRenames: false }],
   'metro-warp': [{}, { followRenames: false }],
   'metro-hex': [{}, { followRenames: false }],
@@ -253,8 +264,8 @@ const fixtureOpts: Record<string, Options[]> = {
   recompute: [{ order: 'name', align: 'center' }, { order: 'birth', hgap: 0, vgap: 0, pad: 0 }],
   hindsight: [{ showGhosts: true, hgap: 0, vgap: 0, pad: 0, align: 'center' }],
   slack: [{ growthMode: 'additive', hgap: 0, vgap: 0, pad: 0 }, { slack: 0, growth: 1.01, gridMode: 'fixed', gridCols: 2, align: 'center' }],
-  city: [{ hgap: 0, pad: 0 }, {}, { squeeze: 'organic', squeezeRate: 0 }],
-  metro: [{ hgap: 0, pad: 0 }, {}, { squeeze: 'organic', hgap: 0, pad: 0 }, { squeeze: 'pack', squeezeRate: 0 }],
+  city: [{ hgap: 0, pad: 0 }, {}, { squeeze: 'slide', squeezeRate: 0 }, { squeeze: 'organic', hgap: 0, pad: 0 }],
+  metro: [{ hgap: 0, pad: 0 }, {}, { squeeze: 'slide', hgap: 0, pad: 0 }, { squeeze: 'pack', squeezeRate: 0 }, { squeeze: 'organic', squeezeRate: 0 }],
   'metro-pack': [{ hgap: 0, pad: 0 }, {}],
   'metro-warp': [{ hgap: 0, pad: 0 }, {}],
   'metro-hex': [{ hgap: 0, pad: 0 }, {}],

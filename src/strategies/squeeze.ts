@@ -5,9 +5,10 @@
 // space the grid leaves (wide seams, holes from deletions). Districts keep their identity and
 // neighbours; only the gaps close.
 //
+//   (organic, the mesh warp, lives in src/geometry/warp.ts.)
 //   pack     axis slides only: x toward the lot, then y, then x again (Tetris-like; blocks
 //            stay lined up with each other).
-//   organic  slide straight at the centre of the parent's lot, in any direction, then slip
+//   slide    slide straight at the centre of the parent's lot, in any direction, then slip
 //            along whatever stopped it (the axis slides), so blocks settle around their lot
 //            like cells in a Townscaper grid instead of in rows and columns.
 //
@@ -24,7 +25,7 @@
 
 import type { LayoutNode } from '../types.ts';
 
-export type SqueezeMode = 'none' | 'pack' | 'organic';
+export type SqueezeMode = 'none' | 'pack' | 'slide' | 'organic';
 
 interface Pt {
   x: number;
@@ -150,7 +151,7 @@ export function squeezeStep(st: SqueezeState, nodes: LayoutNode[], anchors: Map<
       const inward = unit(lc.x - cc.x, lc.y - cc.y);
       r = pushOut(r, { x: -inward.x, y: -inward.y }, settled, gap);
       let left = budget;
-      if (mode === 'organic') {
+      if (mode === 'slide') {
         // Straight at the lot centre until something is in the way...
         const c2 = centre(r);
         const before = { x: r.x, y: r.y };

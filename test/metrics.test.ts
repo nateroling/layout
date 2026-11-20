@@ -166,6 +166,28 @@ test('player encoding round-trips positions and flags moved nodes', async () => 
   assert.equal(st.list[s.f[7][3]], 'c');
 });
 
+test('player encoding of a warped run: base rects and meshes round-trip', async () => {
+  const { PlayerEncoder, StringTable, pdNew, pdFrame, pdChecksum, pdMeshes } = await import('../src/report/encode.ts');
+  const { Runner } = await import('../src/engine.ts');
+  const { strategies } = await import('../src/strategies/index.ts');
+  const { randomHistory } = await import('./helpers.ts');
+  const enc = new PlayerEncoder(new StringTable());
+  const frames: Frame[] = [];
+  new Runner(randomHistory(3, 60), strategies.metro, { squeeze: 'organic' }, 1e9).run((f) => (frames.push(f), enc.add(f, frames.length - 1)));
+  const p = enc.finish();
+  assert.ok(p.mesh && p.meshCell === 4);
+  const ms = pdMeshes(p.mesh!, p.meshCell!, frames.length);
+  const r = { b: new Uint8Array(Buffer.from(p.data, 'base64')), p: 0 };
+  const s = pdNew(p.kinds.length);
+  frames.forEach((f, i) => {
+    pdFrame(r, s, null);
+    assert.equal(pdChecksum(s), p.sums[i], `checksum frame ${i}`);
+    const m = f.mesh!, d = ms[i];
+    assert.deepEqual([d.i0, d.j0, d.ni, d.nj], [m.i0, m.j0, m.ni, m.nj]);
+    m.d.forEach((v, k) => assert.ok(Math.abs(v - d.d[k]) <= 0.025 + 1e-9, `frame ${i} vertex ${k}`));
+  });
+});
+
 test('survivors are matched by cid: a delete+add rename still pays for its jump', () => {
   // followRenames=false: the strategy gives the renamed file a new id (f:2), the Runner's cid keeps f:1
   const acc = new MetricsAccumulator();

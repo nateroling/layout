@@ -12,6 +12,7 @@
 // Files are batched into one <path> per colour class, so a frame costs roughly
 // 25-30 bytes per node. Coordinates are rounded to 2 decimals.
 
+import { warpPoly, type Mesh } from '../geometry/warp.ts';
 import type { Frame, LayoutNode } from '../types.ts';
 
 export interface Rect {
@@ -101,7 +102,15 @@ const r2 = (v: number) => {
   const r = Math.round(v * 100) / 100;
   return Object.is(r, -0) ? '0' : String(r);
 };
-const rectPath = (n: { x: number; y: number; w: number; h: number }) => `M${r2(n.x)} ${r2(n.y)}h${r2(n.w)}v${r2(n.h)}h${r2(-n.w)}z`;
+const plainRect = (n: { x: number; y: number; w: number; h: number }) => `M${r2(n.x)} ${r2(n.y)}h${r2(n.w)}v${r2(n.h)}h${r2(-n.w)}z`;
+/** A node's outline: its rect, or (warped frames) its base rect pushed through the mesh. */
+const outline = (m: Mesh | undefined, n: LayoutNode) => {
+  if (!m || !n.base) return plainRect(n);
+  const p = warpPoly(m, n.base[0], n.base[1], n.base[2], n.base[3]);
+  let d = `M${r2(p[0])} ${r2(p[1])}`;
+  for (let k = 2; k < p.length; k += 2) d += `L${r2(p[k])} ${r2(p[k + 1])}`;
+  return d + 'z';
+};
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -199,6 +208,7 @@ export function renderSvg(f: Frame, o: SvgOptions = {}): string {
   const moved: string[] = MOVE_COLOURS.map(() => '');
   const filePaths: string[] = new Array(RECENCY_BUCKETS * SIZE_BUCKETS).fill('');
   const tips: string[] = [];
+  const rectPath = (n: LayoutNode) => outline(f.mesh, n);
   for (const n of f.nodes) {
     if (n.kind === 'dir') {
       if (n.parent) {

@@ -27,6 +27,7 @@ import { defaultsOf, type Strategy } from '../engine.ts';
 import { geoSchema } from '../geometry/treev.ts';
 import { cmp, dirname, groupTree } from '../model/tree.ts';
 import type { FileEntry, LayoutNode, OptionSchema, TreeState } from '../types.ts';
+import { newWarp, polyBox, warpPoly, warpStep, type Mesh, type WarpState } from '../geometry/warp.ts';
 import { newSqueeze, squeezeFrame, squeezeStep, type Anchor, type SqueezeMode, type SqueezeState } from './squeeze.ts';
 
 /** A directory's file lot: slots keep their position; holes are reused, earliest first. */
@@ -62,7 +63,9 @@ interface CDir {
 
 export interface CityState {
   dirs: Map<string, CDir>; // live directories only
-  sq: SqueezeState; // squeeze pass (empty when squeeze=none)
+  sq: SqueezeState; // squeeze pass (empty unless squeeze=pack|slide)
+  warp: WarpState; // organic warp mesh (empty unless squeeze=organic)
+  mesh: Mesh | null; // this commit's warp mesh
 }
 
 /** Cell index -> [col, row] in square-shell order (city: grows right and down). */
@@ -118,8 +121,10 @@ export const schema: OptionSchema = { cell: geo.cell, pad: geo.pad, hgap: { ...g
 /** city / metro: the grid schema plus the optional squeeze pass (see squeeze.ts). */
 const citySchema: OptionSchema = {
   ...schema,
-  squeeze: { type: 'enum', default: 'none', values: ['none', 'pack', 'organic'], doc: 'compaction pass after placement: none, pack (axis slides toward the parent lot) or organic (slide straight at it)' },
-  squeezeRate: { type: 'number', default: 1, min: 0, doc: 'squeeze: max inward slide per commit in layout units (0 = all at once)' },
+  squeeze: { type: 'enum', default: 'none', values: ['none', 'pack', 'slide', 'organic'], doc: 'compaction pass after placement: pack / slide move districts toward their parent lot (axis slides / straight at it); organic warps the plane with a Townscaper-style mesh whose empty cells shrink' },
+  squeezeRate: { type: 'number', default: 1, min: 0, doc: 'squeeze: max move per commit in layout units (pack/slide: a district; organic: a mesh vertex); 0 = all at once' },
+  warpCell: { type: 'number', default: 4, min: 1, doc: 'organic: mesh spacing (layout units)' },
+  warpMin: { type: 'number', default: 0.3, min: 0.05, max: 1, doc: 'organic: target size of an empty mesh cell (1 = no squeeze)' },
 };
 
 /** Where child cell k of directory `path` goes, as [col, row] (negative = left/up of the lot). */
@@ -135,7 +140,7 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
     schema: citySchema,
     defaults: defaultsOf(citySchema),
     wires: 'none',
-    init: () => ({ dirs: new Map(), sq: newSqueeze() }),
+    init: () => ({ dirs: new Map(), sq: newSqueeze(), warp: newWarp(), mesh: null }),
 
     step(s, tree, _c, _delta, ctx) {
       const { dirKids, fileKids } = groupTree(tree);
@@ -168,16 +173,31 @@ function makeCity(name: string, description: string, cellOf: CellFn, orient: Ori
       ratchet(s, g, cellOf);
       // 5. Optional squeeze pass on top of the placement.
       const mode = ctx.options.squeeze as SqueezeMode;
-      if (mode !== 'none') {
+      if (mode === 'pack' || mode === 'slide') {
         const { nodes, anchors } = place(s, tree, g);
         squeezeStep(s.sq, nodes, anchors, mode, Number(ctx.options.squeezeRate), g.hgap, g.pad);
+      } else if (mode === 'organic') {
+        const { nodes } = place(s, tree, g);
+        const files = nodes.filter((n) => n.kind === 'file');
+        s.mesh = warpStep(s.warp, bboxOf(nodes), files, { s: Number(ctx.options.warpCell), min: Number(ctx.options.warpMin), rate: Number(ctx.options.squeezeRate) });
       }
     },
 
     frame(s, tree, _c, ctx): LayoutNode[] {
       const { nodes, anchors } = place(s, tree, geoOf(ctx.options));
-      return ctx.options.squeeze === 'none' ? nodes : squeezeFrame(s.sq, nodes, anchors);
+      const mode = ctx.options.squeeze;
+      if (mode === 'pack' || mode === 'slide') return squeezeFrame(s.sq, nodes, anchors);
+      if (mode === 'organic' && s.mesh) {
+        const m = s.mesh;
+        return nodes.map((n) => {
+          const b = n.kind === 'file' ? quadBox(m, n) : polyBox(warpPoly(m, n.x, n.y, n.w, n.h));
+          return { ...n, base: [n.x, n.y, n.w, n.h], x: b.x, y: b.y, w: b.w, h: b.h };
+        });
+      }
+      return nodes;
     },
+
+    mesh: (s, ctx) => (ctx.options.squeeze === 'organic' ? (s.mesh ?? undefined) : undefined),
   };
 
   /** The grid placement (pure): every node, plus each district's lot anchor for the squeeze. */
@@ -307,5 +327,13 @@ export function ratchet(s: CityState, g: Geo, cellOf: CellFn): void {
     }
   }
 }
+
+const bboxOf = (ns: LayoutNode[]) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of ns) (x0 = Math.min(x0, n.x)), (y0 = Math.min(y0, n.y)), (x1 = Math.max(x1, n.x + n.w)), (y1 = Math.max(y1, n.y + n.h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+};
+/** A file (smaller than a mesh cell) mapped through the mesh: bbox of its warped polygon. */
+const quadBox = (m: Mesh, n: LayoutNode) => polyBox(warpPoly(m, n.x, n.y, n.w, n.h));
 
 export const depth = (p: string) => (p === '' ? 0 : p.split('/').length);
