@@ -328,3 +328,34 @@ Calls made:
   regions (flat-cell cells, affinity/rings discs) are a pale ground beneath the files instead of background-coloured walls
   on top. Streets and homestead draw no outline (blocks already read as folders; 24-ray outlines of long 2-row blocks were
   jagged). Hilbert never had one.
+
+## Dot cells (nested, bottom-up, 2026-11-20)
+
+Nate: "cell layout, but files are dots, and the shape of the cell is calculated based on the files in it. File size is
+dot volume. Subfolders are cells within cells." One layout, its own viewer (pan/zoom, hover), ripgrep only.
+`src/nature/dots.ts`, `node bin/dots.ts` -> out/dots/ (`src/nature/dots.html`, not the nature player).
+ripgrep, 150 frames (layout stepped on 432 commits): moves 0.16, jumps 0.7%, worst step 3.5 (the "move all source code
+into crates/" commit), 38 u²/file, 0 overlapping dots, 1 of 6,307 folder-frames with its cell in two pieces.
+
+Calls made:
+- **Dot size**: radius = max(0.35, 0.085 x cbrt(bytes)), so volume is proportional to size; the floor keeps empty
+  files visible.
+- **Cell shape**: a folder's cell is the union of its descendant dots, each grown by `margin` (1) per level from the dot's
+  folder up to this one, so nesting is concentric; neighbouring discs of one cell are bridged to smooth the scallops.
+  Drawn as tinted ground under the dots (deeper = stronger tint), never as lines over them. Considered a power-diagram
+  (straight-walled) version; went with membranes because they follow the dots more closely.
+- **Layout**: first tried one flat simulation (all dots pull towards every enclosing folder's centre, pairs pushed apart
+  to a nesting-aware clearance). It jammed: 8-12% of folder-frames had their cell split by other cells wedged in, and
+  repairing that churned (moves 0.8). Replaced by a nested one: each folder lays out its own files and its subfolders
+  (as rigid clusters) in its own frame, deepest first, so nothing outside can get in. Pull 0.02 per iteration, 60
+  iterations per folder per frame, gaps 0.25 in a folder and 0.5 between cells. Pull 0.04 gave moves 0.22, 0.01 gave 0.15
+  but looser cells.
+- **Moves and renames**: files and folders keep their offsets; a renamed/moved folder is anchored where its files were.
+  A file only keeps its spot through a move if it went where most of its old folder's files went; others (e.g. licence
+  files that rename detection matches to the wrong crate) are placed afresh. A piece still caught after settling (a
+  file trapped in the folds of a cell that just formed around it) is lifted to the nearest free spot.
+- **Colours**: a file alive at the end uses its final folder group; a folder takes the commonest group of the
+  end-alive files it ever held; a deleted file takes its last folder's colour, so early, later-deleted files aren't all
+  grey. A cell holding several groups (crates/, the root) is neutral grey.
+- **Viewer**: camera follows the whole layout until you pan or zoom (Fit returns to that); folder names on cells big
+  enough to hold them, placed at the cell's top edge (toggle off).

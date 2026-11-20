@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dot Cells</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* A specimen under the microscope: one plate, a clock bar above it, the tissue growing commit by commit. */
+:root {
+  --bg: #eef1ec; --panel: #f8faf6; --ink: #1d2a22; --muted: #5b6a60; --rule: #d3dbd2; --accent: #2f7d55; --hilite: #1d2a22; --neutral: #7d8a80;
+  --g0: #d1495b; --g1: #edae49; --g2: #00798c; --g3: #6a4c93; --g4: #3c8d2f;
+  --g5: #e07a3f; --g6: #4d8fd6; --g7: #b5527f; --g8: #8d7b2a; --g9: #9aa39c;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: Inter, system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1512; --panel: #151d18; --ink: #e3ebe4; --muted: #95a59a; --rule: #26332b; --accent: #6cc293; --hilite: #ffffff; --neutral: #8a978e;
+  --g0: #ef6f7f; --g1: #f2bf62; --g2: #2cb3c4; --g3: #a183cf; --g4: #6dc05c; --g5: #f09a5f; --g6: #78adf0; --g7: #d77ba4; --g8: #c4b058; --g9: #6f7a72;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1512; --panel: #151d18; --ink: #e3ebe4; --muted: #95a59a; --rule: #26332b; --accent: #6cc293; --hilite: #ffffff; --neutral: #8a978e;
+  --g0: #ef6f7f; --g1: #f2bf62; --g2: #2cb3c4; --g3: #a183cf; --g4: #6dc05c; --g5: #f09a5f; --g6: #78adf0; --g7: #d77ba4; --g8: #c4b058; --g9: #6f7a72;
+  color-scheme: dark }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1500px; margin: 0 auto; padding-block: 24px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+header { display: grid; gap: 6px; max-width: 76ch; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4.2vw, 42px); line-height: 1.05; margin: 0; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--muted); }
+.wrap > *, .clock > * { min-width: 0; }
+.clock { display: grid; gap: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.play { font: 600 14px var(--body); background: var(--ink); color: var(--panel); border: 0; border-radius: 999px; padding: 7px 18px; cursor: pointer; min-width: 84px; }
+button:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=range] { flex: 1 1 260px; accent-color: var(--accent); min-width: 0; }
+.when { font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+@media (min-width: 700px) { .when { white-space: nowrap; } }
+.subject { font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 200px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; background: var(--panel); }
+.seg button { font: 500 13px var(--body); color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 6px; }
+.ghost { font: 500 13px var(--body); color: var(--muted); background: var(--panel); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.ghost:hover { color: var(--ink); border-color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px var(--mono); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.plate { position: relative; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+canvas { display: block; width: 100%; height: min(78vh, 980px); min-height: 360px; touch-action: none; cursor: grab; }
+canvas.dragging { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 2px 8px; border-radius: 4px; }
+.score { font: 12px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--ink); color: var(--panel); font: 12px var(--mono); padding: 6px 9px; border-radius: 4px; max-width: min(420px, 80vw); overflow-wrap: anywhere; }
+footer { color: var(--muted); font-size: 13px; max-width: 82ch; }
+footer code { font-family: var(--mono); font-size: 12px; }
+#status { padding: 40px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Dot cells</h1>
+    <p id="intro">Every file is a dot, and each folder is the cell that grows around its files.</p>
+  </header>
+  <div class="clock">
+    <div class="row">
+      <button type="button" class="play" id="play">Play</button>
+      <input type="range" id="scrub" min="0" max="0" step="0.001" value="0" aria-label="Commit">
+      <span class="when" id="when"></span>
+    </div>
+    <div class="row">
+      <span class="subject" id="subject"></span>
+      <div><span class="lab">Speed</span><span class="seg" id="speed"><button type="button" data-v="0.5" aria-pressed="false">½×</button><button type="button" data-v="1" aria-pressed="true">1×</button><button type="button" data-v="2" aria-pressed="false">2×</button><button type="button" data-v="4" aria-pressed="false">4×</button></span></div>
+      <div><span class="lab">Dots</span><span class="seg" id="colour"><button type="button" data-v="0" aria-pressed="true">Folder</button><button type="button" data-v="1" aria-pressed="false">File type</button></span></div>
+      <div><span class="lab">Names</span><span class="seg" id="labels"><button type="button" data-v="1" aria-pressed="true">On</button><button type="button" data-v="0" aria-pressed="false">Off</button></span></div>
+      <button type="button" class="ghost" id="fit">Fit</button>
+    </div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="plate">
+    <canvas id="cv" role="img" aria-label="The repository as nested cells of file dots, over time"></canvas>
+    <div class="hint" id="hint">Drag to pan · scroll or pinch to zoom · hover for names</div>
+    <div id="status">Loading history…</div>
+  </div>
+  <div class="score" id="score"></div>
+  <footer id="footer"></footer>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let META, BUF, P;
+const state = { pos: 0, playing: false, speed: 1, colour: 0, labels: true, hotDir: null, hotId: -1, auto: true };
+const cam = { x: 0, y: 0, s: 1 };
+let C = {};
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+const mix = (a, b, t) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`;
+function readColours() {
+  C = { bg: css('--panel'), ink: css('--ink'), muted: css('--muted'), hilite: css('--hilite'), g: Array.from({ length: 10 }, (_, i) => css('--g' + i)) };
+  C.bgRGB = hex(C.bg); C.gRGB = C.g.map(hex); C.neutralRGB = hex(css('--neutral'));
+  C.dark = C.bgRGB[0] < 80;
+  TINT.clear();
+}
+const fmtSize = (b) => (b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB');
+
+// ---- decoding (see bin/dots.ts for the record layout) ----
+const FR = [];
+function frame(k) {
+  if (FR[k]) return FR[k];
+  const dv = new DataView(BUF);
+  let o = META.frames[k].offset;
+  const n = dv.getUint16(o, true); o += 2;
+  const dots = [];
+  for (let i = 0; i < n; i++) {
+    const id = dv.getUint16(o, true), path = META.paths[dv.getUint16(o + 2, true)], size = dv.getUint32(o + 4, true);
+    const x = dv.getInt16(o + 8, true) / 20, y = dv.getInt16(o + 10, true) / 20;
+    o += 12;
+    const cut = path.lastIndexOf('/'), dir = cut < 0 ? '' : path.slice(0, cut);
+    dots.push({ id, path, dir, size, x, y, r: Math.max(META.radius.min, META.radius.k * Math.cbrt(Math.max(size, 1))) });
+  }
+  return (FR[k] = { dots, byId: new Map(dots.map((d) => [d.id, d])) });
+}
+const chains = new Map();
+function chainOf(dir) {
+  let c = chains.get(dir);
+  if (!c) { c = []; if (dir) { const parts = dir.split('/'); for (let i = 1; i <= parts.length; i++) c.push(parts.slice(0, i).join('/')); } chains.set(dir, c); }
+  return c;
+}
+
+// ---- the frame between two commits ----
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => t * t * (3 - 2 * t);
+function scene() {
+  const n = META.frames.length, i = Math.min(Math.floor(state.pos), n - 1), j = Math.min(i + 1, n - 1);
+  const A = frame(i), B = frame(j), t = ease(state.pos - i);
+  const out = [];
+  for (const a of A.dots) {
+    const b = B.byId.get(a.id);
+    if (b) { const near = t < 0.5 ? a : b; out.push({ id: a.id, path: near.path, dir: near.dir, size: near.size, x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), r: lerp(a.r, b.r, t), k: 1 }); }
+    else out.push({ ...a, k: 1 - t });
+  }
+  for (const b of B.dots) if (!A.byId.has(b.id)) out.push({ ...b, k: t });
+  for (const d of out) { d.chain = chainOf(d.dir); d.depth = d.chain.length; }
+  return out;
+}
+
+// ---- folder cells: within one margin per nesting level of their files' dots ----
+const TINT = new Map();
+function groupOfId(id) { const g = META.colourArr[id * 2]; return g === 255 || g === undefined ? 9 : g; }
+function tint(group, depth, hot) {
+  const key = group + ':' + depth + ':' + (hot ? 1 : 0);
+  let c = TINT.get(key);
+  if (!c) {
+    const base = group < 0 ? C.neutralRGB : C.gRGB[group];
+    const a = (C.dark ? 0.2 : 0.16) + (C.dark ? 0.1 : 0.09) * (depth - 1) + (hot ? 0.14 : 0);
+    TINT.set(key, (c = mix(C.bgRGB, base, Math.min(a, 0.7))));
+  }
+  return c;
+}
+function cells(dots) {
+  const m = META.params.margin;
+  const F = new Map(); // folder path -> { depth, discs: [[x,y,R]], quads: [], group, sx, sy, sw, n }
+  const get = (path, depth) => { let f = F.get(path); if (!f) F.set(path, (f = { path, depth, discs: [], quads: [], group: undefined, sx: 0, sy: 0, sw: 0, n: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, tx: 0 })); return f; };
+  for (const d of dots) {
+    const g = groupOfId(d.id);
+    d.chain.forEach((p, li) => {
+      const D = li + 1, f = get(p, D), R = (d.r + m * (d.depth - D + 1)) * d.k;
+      f.discs.push(d.x, d.y, R);
+      f.group = f.group === undefined ? g : f.group === g ? g : -1;
+      const a = d.r * d.r * d.k; f.sx += d.x * a; f.sy += d.y * a; f.sw += a; f.n++;
+      f.x0 = Math.min(f.x0, d.x - R); if (d.y - R < f.y0) { f.y0 = d.y - R; f.tx = d.x; } f.x1 = Math.max(f.x1, d.x + R); f.y1 = Math.max(f.y1, d.y + R);
+    });
+  }
+  // smooth the scallops: a band between every two overlapping discs of the same cell
+  for (let i = 0; i < dots.length; i++) {
+    const a = dots[i];
+    for (let j = i + 1; j < dots.length; j++) {
+      const b = dots[j], ca = a.chain, cb = b.chain;
+      let L = 0; while (L < ca.length && L < cb.length && ca[L] === cb[L]) L++;
+      if (!L) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy);
+      if (dist < 1e-6) continue;
+      for (let D = L; D >= 1; D--) {
+        const Ra = (a.r + m * (a.depth - D + 1)) * a.k, Rb = (b.r + m * (b.depth - D + 1)) * b.k;
+        if (dist > (Ra + Rb) * 0.98) continue;
+        const h = Math.min(Ra, Rb) * 0.9, nx = (-dy / dist) * h, ny = (dx / dist) * h;
+        F.get(ca[D - 1]).quads.push(a.x + nx, a.y + ny, b.x + nx, b.y + ny, b.x - nx, b.y - ny, a.x - nx, a.y - ny);
+      }
+    }
+  }
+  return [...F.values()].sort((p, q) => p.depth - q.depth || (p.path < q.path ? -1 : 1));
+}
+
+// ---- drawing ----
+const cv = $('#cv'), ctx = cv.getContext('2d');
+let last = null; // { dots, cells, view }
+function bounds(cellList, dots) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const f of cellList) if (f.depth === 1) { x0 = Math.min(x0, f.x0); y0 = Math.min(y0, f.y0); x1 = Math.max(x1, f.x1); y1 = Math.max(y1, f.y1); }
+  for (const d of dots) { x0 = Math.min(x0, d.x - d.r); y0 = Math.min(y0, d.y - d.r); x1 = Math.max(x1, d.x + d.r); y1 = Math.max(y1, d.y + d.r); }
+  return x0 === Infinity ? { x0: -5, y0: -5, x1: 5, y1: 5 } : { x0, y0, x1, y1 };
+}
+function render() {
+  if (!META) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const dots = scene(), cl = cells(dots);
+  if (state.auto) {
+    const b = bounds(cl, dots), pad = 24;
+    cam.s = Math.min((W - 2 * pad) / (b.x1 - b.x0), (H - 2 * pad) / (b.y1 - b.y0));
+    cam.x = (b.x0 + b.x1) / 2; cam.y = (b.y0 + b.y1) / 2;
+  }
+  const s = cam.s, ox = W / 2 - cam.x * s, oy = H / 2 - cam.y * s;
+  last = { dots, cells: cl, ox, oy, s };
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+  // cells, shallow first, so each subfolder sits on its parent
+  const hot = state.hotDir;
+  for (const f of cl) {
+    const isHot = hot !== null && hot !== '' && (hot === f.path || hot.startsWith(f.path + '/')) && f.path === hot;
+    ctx.fillStyle = tint(f.group === undefined ? -1 : f.group === 9 ? -1 : f.group, f.depth, isHot);
+    ctx.beginPath();
+    for (let i = 0; i < f.discs.length; i += 3) { const R = f.discs[i + 2]; if (R <= 0) continue; ctx.moveTo(f.discs[i] + R, f.discs[i + 1]); ctx.arc(f.discs[i], f.discs[i + 1], R, 0, 2 * Math.PI); }
+    ctx.fill();
+    if (f.quads.length) {
+      ctx.beginPath();
+      const q = f.quads;
+      for (let i = 0; i < q.length; i += 8) { ctx.moveTo(q[i], q[i + 1]); ctx.lineTo(q[i + 2], q[i + 3]); ctx.lineTo(q[i + 4], q[i + 5]); ctx.lineTo(q[i + 6], q[i + 7]); ctx.closePath(); }
+      ctx.fill('nonzero');
+    }
+  }
+  // dots
+  for (const d of dots) {
+    if (d.k <= 0.001) continue;
+    const g = META.colourArr[d.id * 2 + state.colour];
+    ctx.fillStyle = C.g[g === 255 || g === undefined ? 9 : g];
+    ctx.globalAlpha = hot !== null && !(d.dir === hot || d.dir.startsWith(hot + '/') || hot === '') ? 0.55 : 1;
+    ctx.beginPath(); ctx.arc(d.x, d.y, d.r * d.k, 0, 2 * Math.PI); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const hd = state.hotId >= 0 && dots.find((d) => d.id === state.hotId);
+  if (hd) { ctx.lineWidth = 2 / s; ctx.strokeStyle = C.hilite; ctx.beginPath(); ctx.arc(hd.x, hd.y, hd.r * hd.k + 1.5 / s, 0, 2 * Math.PI); ctx.stroke(); }
+  // folder names, in screen space, where the cell is big enough to hold them
+  if (state.labels) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const placed = [];
+    for (const f of [...cl].sort((a, b) => a.depth - b.depth || b.n - a.n)) {
+      const w = (f.x1 - f.x0) * s, h = (f.y1 - f.y0) * s;
+      if (!f.sw || Math.min(w, h) < 70) continue;
+      const name = f.path.slice(f.path.lastIndexOf('/') + 1) + '/';
+      const size = Math.max(10, Math.min(15, 15 - f.depth));
+      ctx.font = `600 ${size}px ${css('--body') || 'system-ui'}`;
+      const tw = ctx.measureText(name).width;
+      if (tw > w * 0.9) continue;
+      const x = ox + f.tx * s, y = oy + f.y0 * s + size * 0.9;
+      const box = [x - tw / 2 - 3, y - size / 2 - 2, x + tw / 2 + 3, y + size / 2 + 2];
+      if (placed.some((p) => !(box[2] < p[0] || box[0] > p[2] || box[3] < p[1] || box[1] > p[3]))) continue;
+      placed.push(box);
+      ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.globalAlpha = 0.85; ctx.strokeText(name, x, y);
+      ctx.globalAlpha = 1; ctx.fillStyle = C.muted; ctx.fillText(name, x, y);
+    }
+  }
+}
+
+let lastLabel = -1;
+function update() {
+  render();
+  const n = META.frames.length, k = Math.min(Math.round(state.pos), n - 1);
+  if (k !== lastLabel) {
+    lastLabel = k;
+    const f = META.frames[k];
+    $('#when').textContent = `${f.date} · ${f.sha} · commit ${f.commit + 1} of ${META.commits.toLocaleString('en')} · ${f.files} files`;
+    $('#subject').textContent = f.subject;
+  }
+  $('#scrub').value = state.pos;
+}
+let prevT = 0;
+function tick(now) {
+  if (!state.playing) return;
+  const dt = Math.max(0, Math.min(now - prevT, 100)); prevT = now;
+  state.pos += (dt / 400) * state.speed;
+  if (state.pos >= META.frames.length - 1) { state.pos = META.frames.length - 1; setPlaying(false); }
+  update();
+  if (state.playing) requestAnimationFrame(tick);
+}
+function setPlaying(on) {
+  if (on && state.pos >= META.frames.length - 1) state.pos = 0;
+  state.playing = on;
+  $('#play').textContent = on ? 'Pause' : state.pos >= META.frames.length - 1 ? 'Replay' : 'Play';
+  if (on) { prevT = performance.now(); requestAnimationFrame(tick); }
+}
+
+// ---- hover: a dot, else the deepest cell under the pointer ----
+function hover(ev) {
+  if (!last) return;
+  const r = cv.getBoundingClientRect(), x = (ev.clientX - r.left - last.ox) / last.s, y = (ev.clientY - r.top - last.oy) / last.s;
+  let best = null, bd = Infinity;
+  for (const d of last.dots) { const e = Math.hypot(d.x - x, d.y - y) - d.r * d.k; if (e < bd) { bd = e; best = d; } }
+  const tip = $('#tip');
+  let text = null;
+  if (best && bd < 4 / last.s) { state.hotId = best.id; state.hotDir = best.dir; text = `${best.path} · ${fmtSize(best.size)}`; }
+  else {
+    state.hotId = -1;
+    let cell = null;
+    for (const f of last.cells) {
+      if (cell && f.depth <= cell.depth) continue;
+      for (let i = 0; i < f.discs.length; i += 3) if ((f.discs[i] - x) ** 2 + (f.discs[i + 1] - y) ** 2 < f.discs[i + 2] ** 2) { cell = f; break; }
+    }
+    state.hotDir = cell ? cell.path : null;
+    if (cell) text = `${cell.path}/ · ${cell.n} file${cell.n === 1 ? '' : 's'}`;
+  }
+  if (!state.playing) render();
+  if (!text) { tip.hidden = true; return; }
+  tip.hidden = false; tip.textContent = text;
+  tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = ev.clientY + 16 + 'px';
+}
+function clearHover() { state.hotDir = null; state.hotId = -1; $('#tip').hidden = true; if (!state.playing) render(); }
+
+// ---- pan and zoom ----
+const ptrs = new Map();
+let pinch = null;
+function zoomAt(px, py, f) {
+  const r = cv.getBoundingClientRect(), W = cv.clientWidth, H = cv.clientHeight;
+  const sx = px - r.left, sy = py - r.top;
+  const wx = cam.x + (sx - W / 2) / cam.s, wy = cam.y + (sy - H / 2) / cam.s;
+  cam.s = Math.max(0.05, Math.min(cam.s * f, 400));
+  cam.x = wx - (sx - W / 2) / cam.s; cam.y = wy - (sy - H / 2) / cam.s;
+}
+function manual() { if (state.auto) { state.auto = false; $('#hint').hidden = true; } }
+cv.addEventListener('wheel', (ev) => { ev.preventDefault(); manual(); zoomAt(ev.clientX, ev.clientY, Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : 0.0015))); render(); }, { passive: false });
+cv.addEventListener('pointerdown', (ev) => { cv.setPointerCapture(ev.pointerId); ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY }); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; } cv.classList.add('dragging'); });
+cv.addEventListener('pointermove', (ev) => {
+  const p = ptrs.get(ev.pointerId);
+  if (!p) { if (ev.pointerType === 'mouse') hover(ev); return; }
+  if (ptrs.size === 1) {
+    const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
+    if (Math.abs(dx) + Math.abs(dy) > 0) { manual(); cam.x -= dx / cam.s; cam.y -= dy / cam.s; }
+  }
+  p.x = ev.clientX; p.y = ev.clientY;
+  if (ptrs.size === 2 && pinch) {
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    manual(); zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinch.d); pinch.d = d;
+  }
+  render();
+});
+const up = (ev) => { ptrs.delete(ev.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) cv.classList.remove('dragging'); if (ev.pointerType !== 'mouse') hover(ev); };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('pointerleave', clearHover);
+cv.addEventListener('dblclick', (ev) => { manual(); zoomAt(ev.clientX, ev.clientY, ev.shiftKey ? 0.5 : 2); render(); });
+$('#fit').addEventListener('click', () => { state.auto = true; render(); });
+
+function legend() {
+  const labels = state.colour === 0 ? META.groups : META.exts;
+  $('#legend').innerHTML = '';
+  labels.forEach((l, i) => {
+    const s = document.createElement('span');
+    const lastOne = i === labels.length - 1 && (l === 'everything else' || l === 'other');
+    s.innerHTML = `<i style="background:var(--g${lastOne ? 9 : i})"></i>`;
+    s.append(l);
+    $('#legend').append(s);
+  });
+}
+function seg(el, on) {
+  el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; for (const x of el.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b); on(b.dataset.v); });
+}
+
+Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then((r) => r.text())]).then(([meta, txt]) => {
+  META = meta; BUF = Uint8Array.from(atob(txt.trim()), (c) => c.charCodeAt(0)).buffer;
+  META.colourArr = Uint8Array.from(atob(META.colour), (c) => c.charCodeAt(0));
+  readColours();
+  $('#status').remove();
+  const p = META.params, m = META.metrics;
+  $('#intro').textContent = `Every file in ${META.repo} is a dot whose volume is its size, so its radius grows with the cube root. Each folder is a cell that grows around its own dots, a margin wide per level, so subfolders sit as cells within cells. Replayed over ${META.commits.toLocaleString('en')} commits in ${META.frames.length} frames; the layout remembers earlier frames but never looks ahead.`;
+  $('#score').textContent = `moves ${m.move.toFixed(2)} file widths per frame · jumps ${(m.jumps * 100).toFixed(1)}% · worst step ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file`;
+  $('#footer').innerHTML = `How it works: every folder is laid out in its own frame, deepest first. Its pieces are its own files (single dots) and its subfolders (each already laid out, and moved only as a whole). Each frame the pieces are pulled gently towards the folder’s anchor and pushed apart until no two dots from different pieces are closer than their cells allow: a dot reaches its radius plus a ${p.margin} margin per level it sits below the folder, dots in one folder keep ${p.gapIn} apart and sibling cells ${p.gapOut}. Since nothing outside a folder can wedge into it, every cell stays in one piece. Files and folders keep their offsets from frame to frame; a new file or folder goes to the free spot nearest its parent’s anchor; a renamed or moved folder starts where its files were. The root is pinned at the origin. Cells are drawn from the dots alone: each folder’s ground is every one of its dots grown by one margin per level down to it, with the gaps between neighbours filled in. Frames are evenly spaced commits on the first-parent history (the layout also steps through the commits in between). Folder colours come from the final tree; a cell holding several colour groups is grey. <b>Moves</b> is the mean distance each surviving file moves per frame, in file widths (square root of the bounding box per file). Source: <code>src/nature/dots.ts</code>, regenerate with <code>node bin/dots.ts</code>.`;
+  const scrub = $('#scrub');
+  scrub.max = META.frames.length - 1;
+  scrub.addEventListener('input', () => { state.pos = +scrub.value; if (state.playing) setPlaying(false); update(); });
+  $('#play').addEventListener('click', () => setPlaying(!state.playing));
+  seg($('#speed'), (v) => (state.speed = +v));
+  seg($('#colour'), (v) => { state.colour = +v; legend(); render(); });
+  seg($('#labels'), (v) => { state.labels = v === '1'; render(); });
+  legend();
+  new ResizeObserver(() => render()).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); render(); });
+  new MutationObserver(() => { readColours(); render(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  state.pos = reduce ? META.frames.length - 1 : 0;
+  update();
+  setPlaying(!reduce);
+}).catch((e) => { $('#status').textContent = 'Could not load the history data: ' + e.message; });
+</script>
+</body>
+</html>
