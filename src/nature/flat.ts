@@ -60,25 +60,6 @@ function discPoly(x: number, y: number, r: number, k = 40): Poly {
   return p;
 }
 
-/** Convex hull of the files' squares, padded a little: a folder's outline when its squares are a blob. */
-function hull(pts: [number, number][]): Poly {
-  const P = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  if (P.length < 3) return [];
-  const crossZ = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lo: number[][] = [];
-  for (const p of P) {
-    while (lo.length >= 2 && crossZ(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
-    lo.push(p);
-  }
-  const up: number[][] = [];
-  for (const p of [...P].reverse()) {
-    while (up.length >= 2 && crossZ(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop();
-    up.push(p);
-  }
-  return [...lo.slice(0, -1), ...up.slice(0, -1)].flat();
-}
-const squareHull = (sqs: [number, number][]) => hull(sqs.flatMap(([gx, gy]) => [[gx + 0.05, gy + 0.05], [gx + 0.95, gy + 0.05], [gx + 0.95, gy + 0.95], [gx + 0.05, gy + 0.95]] as [number, number][]));
-
 /** The free grid square nearest (tx, ty), searching outward ring by ring; ties go to the smaller key. */
 function nearestFree(tx: number, ty: number, free: (gx: number, gy: number) => boolean): [number, number] {
   const cx = Math.floor(tx);
@@ -169,7 +150,6 @@ export function homestead(): FlatStepper {
     }
     for (const d of live) {
       const [sx, sy] = seed.get(d.path)!;
-      const sqs: [number, number][] = [];
       for (const f of bySeq(ctx, d.files)) {
         let sq = keep.get(f);
         if (!sq) {
@@ -180,10 +160,8 @@ export function homestead(): FlatStepper {
           taken.add(sq.join());
           home.set(fkey(ctx, f), { dir: d.path, sq });
         }
-        sqs.push(sq);
         squareMark(scene, f, sq[0], sq[1]);
       }
-      if (d.parent && sqs.length >= 3) scene.shapes.push({ k: 'poly', d: d.i, pts: squareHull(sqs) });
     }
     return scene;
   };
@@ -231,7 +209,6 @@ export function flatCells(): FlatStepper {
     live.forEach((d, i) => {
       const cell = cells[i];
       const [cx, cy] = cell.length ? centroid(cell) : [0, 0];
-      const sqs: [number, number][] = [];
       const dist2 = (q: [number, number]) => (q[0] + 0.5 - cx) ** 2 + (q[1] + 0.5 - cy) ** 2 + 1e-9 * (q[0] * 7 + q[1]);
       let inCell: [number, number][] = [];
       if (cell.length >= 6) {
@@ -251,7 +228,6 @@ export function flatCells(): FlatStepper {
           home.set(fkey(ctx, f), { dir: d.path, sq });
         }
         const [gx, gy] = sq.split(',').map(Number);
-        sqs.push([gx, gy]);
         squareMark(scene, f, gx, gy);
       }
       if (d.parent && cell.length) scene.shapes.push({ k: 'poly', d: d.i, pts: cell });
@@ -431,7 +407,6 @@ export function streets(): FlatStepper {
             const col = east ? x0 + Math.floor(k / 2) : x0 + l.len - 1 - Math.floor(k / 2);
             squareMark(scene, f, col, y + (k % 2));
           }
-          if (d.parent) scene.shapes.push({ k: 'poly', d: d.i, pts: rect(x0 + 0.02, y + 0.02, l.len - 0.04, 1.96) });
         }
         x = east ? x + l.len + ROAD : x - l.len - ROAD;
       }

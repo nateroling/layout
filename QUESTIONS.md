@@ -310,7 +310,7 @@ Calls made:
 - Homestead, streets, rings and hilbert never move a file that stays in its folder; their nonzero moves are files that
   changed folder (renames) plus younger discs/blocks being pushed. Their worst steps are big rename commits.
 - **Homestead**: a folder's seed is the nearest square to its parent's seed with a free 3x3 around it; live seeds are
-  reserved for their folder. Folder outline = convex hull of its squares (can overlap neighbours when ragged).
+  reserved for their folder. No folder outline (a hull overlapped neighbours when ragged); colour and hover show the folder.
 - **Flat cells**: one power diagram of all folders in a disc of 1.3 squares per file (inertia 0.25, as districts); a newborn
   site starts 0.03 (region-relative) from its nearest ancestor's site, with the lowest weight.
 - **Affinity**: co-change = commits touching 2..8 folders, cosine-normalised, counted over every commit up to the frame.
@@ -324,3 +324,7 @@ Calls made:
   run; full folder grows its last run in place if free, else takes a new run of half its total.
 - 80 frames (not 100) and 24 folder rays to stay under ~4 MB. Player: families can set `kind` (parser) separately from
   `name` (data file).
+- **Rendering** (Nate found walls drawn over buildings confusing): the flat family sets `walls: 'under'`, so folder
+  regions (flat-cell cells, affinity/rings discs) are a pale ground beneath the files instead of background-coloured walls
+  on top. Streets and homestead draw no outline (blocks already read as folders; 24-ray outlines of long 2-row blocks were
+  jagged). Hilbert never had one.

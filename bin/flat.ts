@@ -196,6 +196,7 @@ const meta = {
     {
       name: 'flat',
       kind: 'cells',
+      walls: 'under',
       title: 'Flat cities',
       blurb: LINEUP[0].blurb,
       offsets,

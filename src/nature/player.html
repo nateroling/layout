@@ -234,6 +234,17 @@ function draw(p, A, B, t) {
       }
     }
   }
+  // folder regions as a pale ground under the files, for families whose walls would cut through them
+  const under = META.families[state.fam].walls === 'under';
+  if (name === 'cells' && under) {
+    ctx.fillStyle = C.rule; ctx.strokeStyle = C.rule;
+    for (const d of pair(la.dirs, lb.dirs, (d) => d.key, t, (a, b2, tt, sc) => ({ key: a.key, x: lerp(a.x, b2.x, tt), y: lerp(a.y, b2.y, tt), r: lerp(a.r, b2.r, tt) * sc, rays: a.rays.map((v, j) => lerp(v, b2.rays[j], tt)) }))) {
+      if (d.r <= 0.001) continue;
+      ctx.beginPath(); cellPath(ctx, d.x, d.y, d.r, d.rays);
+      ctx.globalAlpha = 0.35 * dimDir(d.key); ctx.fill();
+      ctx.globalAlpha = 0.9 * dimDir(d.key); ctx.lineWidth = 1 / s; ctx.stroke();
+    }
+  }
   // files
   for (const m of marks) {
     if (m.r <= 0.001) continue;
@@ -244,7 +255,7 @@ function draw(p, A, B, t) {
     else { ctx.arc(m.x, m.y, m.r, 0, 7); ctx.fill(); }
     if (m.id === state.hotId) { ctx.globalAlpha = 1; ctx.lineWidth = 2 / s; ctx.strokeStyle = C.hilite; ctx.stroke(); }
   }
-  if (name === 'cells') {
+  if (name === 'cells' && !under) {
     ctx.globalAlpha = 1; ctx.strokeStyle = C.bg;
     for (const d of pair(la.dirs, lb.dirs, (d) => d.key, t, (a, b2, tt, sc) => ({ key: a.key, x: lerp(a.x, b2.x, tt), y: lerp(a.y, b2.y, tt), r: lerp(a.r, b2.r, tt) * sc, rays: a.rays.map((v, j) => lerp(v, b2.rays[j], tt)) }))) {
       if (d.r <= 0.001) continue;
