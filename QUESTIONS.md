@@ -209,3 +209,17 @@ less stable (moved / tree change +3% to +18%, disruption up to +54% on express).
 metro-spiral (mirroring doesn't change any column or row size). Stability is a little better than metro-spiral everywhere:
 equal to metro on chalk, better than metro on ripgrep (moved / tree change -4%, disruption -6%) though its p95 jump is larger,
 still worse than metro on express (+16% moved, +39% disruption) and vue-core (+18% moved). metro-pack still wins both axes.
+
+## Nature layouts (snapshot experiment, 2026-11-20)
+
+Nate asked for five fresh layouts from nature, one of them a Fibonacci spiral, ignoring stability and history. They live in
+`src/nature/` (not strategies: one snapshot in, one Scene out) and `node bin/nature.ts` writes `out/nature/` (page + data.json),
+published at https://claude.ai/artifact/NHdB9XKY17DDtuBFD93VwE. Calls made:
+- **Sunflower subfolders**: each folder is its own head; subfolder heads continue the parent's golden-angle spiral after the
+  parent's files, biggest first, and every head's outline is the smallest circle around its contents (re-centred), so one big
+  subfolder doesn't leave a half-empty disc. Files go small-to-large outward.
+- **The other four**: tree (da Vinci branching, files as leaves), cells (Voronoi treemap), coral (accretion with a DLA-style tip
+  bias), galaxy (log-spiral arms of folder clusters). Picked for being different from each other, not exhaustively.
+- **File size**: radius = 0.5 * (bytes/1000)^0.25, clamped to [0.4, 2.6], shared by all five (cells use the same areas).
+- **Colours**: by folder group (top-level folders, the biggest split until none holds over 1/8 of the files, 9 + "everything
+  else") or by file extension.
