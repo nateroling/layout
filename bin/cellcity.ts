@@ -160,6 +160,6 @@ const meta = {
   frames,
 };
 writeFileSync(join(out, 'meta.json'), JSON.stringify(meta));
-writeFileSync(join(out, 'index.html'), readFileSync(join(ROOT, 'src', 'nature', 'player.html'), 'utf8'));
+writeFileSync(join(out, 'index.html'), readFileSync(join(ROOT, 'src', 'nature', 'player.html'), 'utf8').replace(/<title>.*<\/title>/, '<title>Cell Cities</title>'));
 for (const r of runs) console.log(`  ${r.v.name.padEnd(12)} ${JSON.stringify(metrics(r.moves))} ${(r.ms / 1000).toFixed(1)} s, ${r.sq} squeezed-out file-frames`);
 console.log(`wrote ${out}: ${((H.n + F.n) / 1024).toFixed(0)} KB binary (${(((H.n + F.n) * 4) / 3 / 1024).toFixed(0)} KB as base64), meta.json ${(JSON.stringify(meta).length / 1024).toFixed(0)} KB`);
