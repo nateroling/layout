@@ -147,7 +147,11 @@ writeFileSync(join(out, 'index.html'), head + page);
 // one self-contained file that opens straight from disk (no server needed)
 const inline = `<script>window.DOTS_DATA = ${JSON.stringify({ meta, frames: B.buf.subarray(0, B.n).toString('base64') }).replace(/</g, '\\u003c')};</script>\n`;
 writeFileSync(join(out, 'standalone.html'), head + inline + page);
+// the same frames, dug into the ground (three.js from a CDN, so this one needs a network connection)
+const page3d = readFileSync(join(ROOT, 'src', 'nature', 'dots3d.html'), 'utf8');
+writeFileSync(join(out, '3d.html'), head + page3d);
+writeFileSync(join(out, 'standalone-3d.html'), head + inline + page3d);
 console.log(`dots: ${JSON.stringify(score)} ${(ms / 1000).toFixed(1)} s over ${simAt.size} steps`);
-console.log(`open ${join(out, 'standalone.html')}`);
+console.log(`open ${join(out, 'standalone.html')}  (3D: ${join(out, 'standalone-3d.html')})`);
 console.log(`wrote ${out}: ${((B.n * 4) / 3 / 1024).toFixed(0)} KB frames, meta.json ${(JSON.stringify(meta).length / 1024).toFixed(0)} KB`);
 if (process.env.DOTS_DEBUG) moves.steps.forEach((v, i) => v > 0.6 && console.log(`step ${i}->${i + 1} ${v.toFixed(2)} ${frames[i + 1].sha} ${frames[i + 1].files} ${frames[i + 1].subject}`));

@@ -1,0 +1,427 @@
+<title>Dot Cells 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* The same specimen as Dot Cells, cut into the ground: one terrace down per folder level. */
+:root {
+  --bg: #eef1ec; --panel: #f8faf6; --ink: #1d2a22; --muted: #5b6a60; --rule: #d3dbd2; --accent: #2f7d55; --hilite: #1d2a22; --neutral: #7d8a80;
+  --g0: #d1495b; --g1: #edae49; --g2: #00798c; --g3: #6a4c93; --g4: #3c8d2f;
+  --g5: #e07a3f; --g6: #4d8fd6; --g7: #b5527f; --g8: #8d7b2a; --g9: #9aa39c;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: Inter, system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1512; --panel: #151d18; --ink: #e3ebe4; --muted: #95a59a; --rule: #26332b; --accent: #6cc293; --hilite: #ffffff; --neutral: #8a978e;
+  --g0: #ef6f7f; --g1: #f2bf62; --g2: #2cb3c4; --g3: #a183cf; --g4: #6dc05c; --g5: #f09a5f; --g6: #78adf0; --g7: #d77ba4; --g8: #c4b058; --g9: #6f7a72;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1512; --panel: #151d18; --ink: #e3ebe4; --muted: #95a59a; --rule: #26332b; --accent: #6cc293; --hilite: #ffffff; --neutral: #8a978e;
+  --g0: #ef6f7f; --g1: #f2bf62; --g2: #2cb3c4; --g3: #a183cf; --g4: #6dc05c; --g5: #f09a5f; --g6: #78adf0; --g7: #d77ba4; --g8: #c4b058; --g9: #6f7a72;
+  color-scheme: dark }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1500px; margin: 0 auto; padding-block: 24px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+header { display: grid; gap: 6px; max-width: 76ch; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4.2vw, 42px); line-height: 1.05; margin: 0; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--muted); }
+.wrap > *, .clock > * { min-width: 0; }
+.clock { display: grid; gap: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.play { font: 600 14px var(--body); background: var(--ink); color: var(--panel); border: 0; border-radius: 999px; padding: 7px 18px; cursor: pointer; min-width: 84px; }
+button:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=range] { flex: 1 1 260px; accent-color: var(--accent); min-width: 0; }
+.when { font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+@media (min-width: 700px) { .when { white-space: nowrap; } }
+.subject { font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 200px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; background: var(--panel); }
+.seg button { font: 500 13px var(--body); color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 6px; }
+.ghost { font: 500 13px var(--body); color: var(--muted); background: var(--panel); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.ghost:hover { color: var(--ink); border-color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px var(--mono); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.plate { position: relative; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+canvas { display: block; width: 100%; height: min(78vh, 980px); min-height: 360px; touch-action: none; cursor: grab; }
+.depthctl { display: inline-flex; align-items: center; gap: 8px; }
+.depthctl input { flex: 0 0 120px; width: 120px; }
+canvas.dragging { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 2px 8px; border-radius: 4px; }
+.score { font: 12px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--ink); color: var(--panel); font: 12px var(--mono); padding: 6px 9px; border-radius: 4px; max-width: min(420px, 80vw); overflow-wrap: anywhere; }
+footer { color: var(--muted); font-size: 13px; max-width: 82ch; }
+footer code { font-family: var(--mono); font-size: 12px; }
+#status { padding: 40px; color: var(--muted); }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Dot cells, dug in</h1>
+    <p id="intro">Every file is a ball and each folder is a terrace cut one step deeper than its parent.</p>
+  </header>
+  <div class="clock">
+    <div class="row">
+      <button type="button" class="play" id="play">Play</button>
+      <input type="range" id="scrub" min="0" max="0" step="0.001" value="0" aria-label="Commit">
+      <span class="when" id="when"></span>
+    </div>
+    <div class="row">
+      <span class="subject" id="subject"></span>
+      <div><span class="lab">Speed</span><span class="seg" id="speed"><button type="button" data-v="0.5" aria-pressed="false">½×</button><button type="button" data-v="1" aria-pressed="true">1×</button><button type="button" data-v="2" aria-pressed="false">2×</button><button type="button" data-v="4" aria-pressed="false">4×</button></span></div>
+      <div><span class="lab">Balls</span><span class="seg" id="colour"><button type="button" data-v="0" aria-pressed="true">Folder</button><button type="button" data-v="1" aria-pressed="false">File type</button></span></div>
+      <label class="depthctl"><span class="lab">Step depth</span><input type="range" id="depth" min="0" max="8" step="0.25" value="3" aria-label="Step depth per folder level"></label>
+      <button type="button" class="ghost" id="fit">Reset view</button>
+    </div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="plate">
+    <canvas id="cv" role="img" aria-label="The repository as terraced cells of file balls, over time"></canvas>
+    <div class="hint" id="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom · hover for names</div>
+    <div id="status">Loading history…</div>
+  </div>
+  <div class="score" id="score"></div>
+  <footer id="footer"></footer>
+</div>
+<div id="tip" hidden></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const $ = (s) => document.querySelector(s);
+let META, BUF;
+const state = { pos: 0, playing: false, speed: 1, colour: 0, step: 3, hotDir: null, hotId: -1, dirty: true };
+let C = {};
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+const mix = (a, b, t) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`;
+function readColours() {
+  C = { bg: css('--panel'), ink: css('--ink'), muted: css('--muted'), hilite: css('--hilite'), g: Array.from({ length: 10 }, (_, i) => css('--g' + i)) };
+  C.bgRGB = hex(C.bg); C.gRGB = C.g.map(hex); C.neutralRGB = hex(css('--neutral'));
+  C.dark = C.bgRGB[0] < 80;
+  TINT.clear();
+}
+const fmtSize = (b) => (b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB');
+
+// ---- decoding (see bin/dots.ts for the record layout) ----
+const FR = [];
+function frame(k) {
+  if (FR[k]) return FR[k];
+  const dv = new DataView(BUF);
+  let o = META.frames[k].offset;
+  const n = dv.getUint16(o, true); o += 2;
+  const dots = [];
+  for (let i = 0; i < n; i++) {
+    const id = dv.getUint16(o, true), path = META.paths[dv.getUint16(o + 2, true)], size = dv.getUint32(o + 4, true);
+    const x = dv.getInt16(o + 8, true) / 20, y = dv.getInt16(o + 10, true) / 20;
+    o += 12;
+    const cut = path.lastIndexOf('/'), dir = cut < 0 ? '' : path.slice(0, cut);
+    dots.push({ id, path, dir, size, x, y, r: Math.max(META.radius.min, META.radius.k * Math.cbrt(Math.max(size, 1))) });
+  }
+  return (FR[k] = { dots, byId: new Map(dots.map((d) => [d.id, d])) });
+}
+const chains = new Map();
+function chainOf(dir) {
+  let c = chains.get(dir);
+  if (!c) { c = []; if (dir) { const parts = dir.split('/'); for (let i = 1; i <= parts.length; i++) c.push(parts.slice(0, i).join('/')); } chains.set(dir, c); }
+  return c;
+}
+
+// ---- the frame between two commits ----
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => t * t * (3 - 2 * t);
+function scene() {
+  const n = META.frames.length, i = Math.min(Math.floor(state.pos), n - 1), j = Math.min(i + 1, n - 1);
+  const A = frame(i), B = frame(j), t = ease(state.pos - i);
+  const out = [];
+  for (const a of A.dots) {
+    const b = B.byId.get(a.id);
+    if (b) { const near = t < 0.5 ? a : b; out.push({ id: a.id, path: near.path, dir: near.dir, size: near.size, x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), r: lerp(a.r, b.r, t), k: 1 }); }
+    else out.push({ ...a, k: 1 - t });
+  }
+  for (const b of B.dots) if (!A.byId.has(b.id)) out.push({ ...b, k: t });
+  for (const d of out) { d.chain = chainOf(d.dir); d.depth = d.chain.length; }
+  return out;
+}
+
+// ---- folder cells: within one margin per nesting level of their files' dots ----
+const TINT = new Map();
+function groupOfId(id) { const g = META.colourArr[id * 2]; return g === 255 || g === undefined ? 9 : g; }
+function tint(group, depth, hot) {
+  const key = group + ':' + depth + ':' + (hot ? 1 : 0);
+  let c = TINT.get(key);
+  if (!c) {
+    const base = group < 0 ? C.neutralRGB : C.gRGB[group];
+    const a = (C.dark ? 0.2 : 0.16) + (C.dark ? 0.1 : 0.09) * (depth - 1) + (hot ? 0.14 : 0);
+    TINT.set(key, (c = mix(C.bgRGB, base, Math.min(a, 0.7))));
+  }
+  return c;
+}
+function cells(dots) {
+  const m = META.params.margin;
+  const F = new Map(); // folder path -> { depth, discs: [[x,y,R]], quads: [], group, sx, sy, sw, n }
+  const get = (path, depth) => { let f = F.get(path); if (!f) F.set(path, (f = { path, depth, discs: [], quads: [], group: undefined, sx: 0, sy: 0, sw: 0, n: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, tx: 0 })); return f; };
+  for (const d of dots) {
+    const g = groupOfId(d.id);
+    d.chain.forEach((p, li) => {
+      const D = li + 1, f = get(p, D), R = (d.r + m * (d.depth - D + 1)) * d.k;
+      f.discs.push(d.x, d.y, R);
+      f.group = f.group === undefined ? g : f.group === g ? g : -1;
+      const a = d.r * d.r * d.k; f.sx += d.x * a; f.sy += d.y * a; f.sw += a; f.n++;
+      f.x0 = Math.min(f.x0, d.x - R); if (d.y - R < f.y0) { f.y0 = d.y - R; f.tx = d.x; } f.x1 = Math.max(f.x1, d.x + R); f.y1 = Math.max(f.y1, d.y + R);
+    });
+  }
+  // smooth the scallops: a band between every two overlapping discs of the same cell
+  for (let i = 0; i < dots.length; i++) {
+    const a = dots[i];
+    for (let j = i + 1; j < dots.length; j++) {
+      const b = dots[j], ca = a.chain, cb = b.chain;
+      let L = 0; while (L < ca.length && L < cb.length && ca[L] === cb[L]) L++;
+      if (!L) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy);
+      if (dist < 1e-6) continue;
+      for (let D = L; D >= 1; D--) {
+        const Ra = (a.r + m * (a.depth - D + 1)) * a.k, Rb = (b.r + m * (b.depth - D + 1)) * b.k;
+        if (dist > (Ra + Rb) * 0.98) continue;
+        const h = Math.min(Ra, Rb) * 0.9, nx = (-dy / dist) * h, ny = (dx / dist) * h;
+        F.get(ca[D - 1]).quads.push(a.x + nx, a.y + ny, b.x + nx, b.y + ny, b.x - nx, b.y - ny, a.x - nx, a.y - ny);
+      }
+    }
+  }
+  return [...F.values()].sort((p, q) => p.depth - q.depth || (p.path < q.path ? -1 : 1));
+}
+
+
+// ---- the ground: a height field cut from the cells, one step per folder level ----
+const RES = 384, TEX = 1024, LEVEL = 24; // height canvas, colour canvas, grey per level in the height canvas
+let G = null; // { x0, y0, w, h } world extent of the ground
+const hcv = document.createElement('canvas'), hctx = hcv.getContext('2d', { willReadFrequently: true });
+const tcv = document.createElement('canvas'), tctx = tcv.getContext('2d');
+hcv.width = hcv.height = RES; tcv.width = tcv.height = TEX;
+function extent() {
+  const m = META.params.margin;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < META.frames.length; k++)
+    for (const d of frame(k).dots) {
+      const R = d.r + m * (chainOf(d.dir).length + 1);
+      x0 = Math.min(x0, d.x - R); y0 = Math.min(y0, d.y - R); x1 = Math.max(x1, d.x + R); y1 = Math.max(y1, d.y + R);
+    }
+  const s = Math.max(x1 - x0, y1 - y0) + 8, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  return { x0: cx - s / 2, y0: cy - s / 2, w: s, h: s };
+}
+function paintCells(ctx, size, cl, fill) {
+  ctx.setTransform(size / G.w, 0, 0, size / G.h, (-G.x0 * size) / G.w, (-G.y0 * size) / G.h);
+  for (const f of cl) {
+    ctx.fillStyle = fill(f);
+    ctx.beginPath();
+    for (let i = 0; i < f.discs.length; i += 3) { const R = f.discs[i + 2]; if (R <= 0) continue; ctx.moveTo(f.discs[i] + R, f.discs[i + 1]); ctx.arc(f.discs[i], f.discs[i + 1], R, 0, 2 * Math.PI); }
+    ctx.fill();
+    if (f.quads.length) {
+      ctx.beginPath();
+      const q = f.quads;
+      for (let i = 0; i < q.length; i += 8) { ctx.moveTo(q[i], q[i + 1]); ctx.lineTo(q[i + 2], q[i + 3]); ctx.lineTo(q[i + 4], q[i + 5]); ctx.lineTo(q[i + 6], q[i + 7]); ctx.closePath(); }
+      ctx.fill();
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// ---- three.js scene ----
+const cv = $('#cv');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene3 = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 5000);
+const controls = new OrbitControls(camera, cv);
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49;
+const hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 1.1); scene3.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(-0.6, 1, -0.35); scene3.add(sun);
+const tex = new THREE.CanvasTexture(tcv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+let ground, groundGeo, balls, ballMax = 0;
+function buildGround() {
+  groundGeo = new THREE.PlaneGeometry(G.w, G.h, RES - 1, RES - 1);
+  groundGeo.rotateX(-Math.PI / 2);
+  groundGeo.translate(G.x0 + G.w / 2, 0, G.y0 + G.h / 2);
+  ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 }));
+  scene3.add(ground);
+  for (let k = 0; k < META.frames.length; k++) ballMax = Math.max(ballMax, frame(k).dots.length + (k ? frame(k - 1).dots.length : 0));
+  balls = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 22, 16), new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0 }), ballMax);
+  balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene3.add(balls);
+}
+const tmp = new THREE.Object3D(), col = new THREE.Color();
+let last = null;
+function update3d() {
+  const dots = scene(), cl = cells(dots);
+  last = { dots, cells: cl };
+  // heights: deeper folder, deeper floor
+  hctx.setTransform(1, 0, 0, 1, 0, 0); hctx.fillStyle = '#000'; hctx.fillRect(0, 0, RES, RES);
+  paintCells(hctx, RES, cl, (f) => { const v = Math.min(255, f.depth * LEVEL); return `rgb(${v},${v},${v})`; });
+  const px = hctx.getImageData(0, 0, RES, RES).data, pos = groundGeo.attributes.position;
+  // soften the terrace walls a little (one box-blur pass), so the steps read as cut banks, not stair-stepped pixels
+  let h = new Float32Array(RES * RES), t = new Float32Array(RES * RES);
+  for (let i = 0; i < RES * RES; i++) h[i] = px[i * 4] / LEVEL;
+  for (let pass = 0; pass < 1; pass++) {
+    for (let y = 0; y < RES; y++)
+      for (let x = 0; x < RES; x++) {
+        let sum = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= RES) continue; for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= RES) continue; sum += h[yy * RES + xx]; n++; } }
+        t[y * RES + x] = sum / n;
+      }
+    [h, t] = [t, h];
+  }
+  for (let i = 0; i < RES * RES; i++) pos.setY(i, -h[i] * state.step);
+  pos.needsUpdate = true; groundGeo.computeVertexNormals();
+  // colours: the same tints as the flat page
+  tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.fillStyle = C.bg; tctx.fillRect(0, 0, TEX, TEX);
+  paintCells(tctx, TEX, cl, (f) => tint(f.group === undefined || f.group === 9 ? -1 : f.group, f.depth, state.hotDir !== null && f.path === state.hotDir));
+  tex.needsUpdate = true;
+  // balls rest on their folder's floor
+  let n = 0;
+  for (const d of dots) {
+    if (d.k <= 0.001) continue;
+    const r = d.r * d.k;
+    tmp.position.set(d.x, -d.depth * state.step + r, d.y); tmp.scale.setScalar(r); tmp.updateMatrix();
+    balls.setMatrixAt(n, tmp.matrix);
+    const g = META.colourArr[d.id * 2 + state.colour];
+    col.set(C.g[g === 255 || g === undefined ? 9 : g]);
+    if (state.hotId === d.id) col.offsetHSL(0, 0, 0.18);
+    balls.setColorAt(n, col);
+    d.inst = n++;
+  }
+  balls.count = n; balls.instanceMatrix.needsUpdate = true; if (balls.instanceColor) balls.instanceColor.needsUpdate = true;
+  last.byInst = dots.filter((d) => d.k > 0.001);
+}
+function resetView() {
+  const s = G.w;
+  controls.target.set(G.x0 + G.w / 2, -state.step * 2, G.y0 + G.h / 2);
+  camera.position.set(G.x0 + G.w / 2 - s * 0.04, s * 0.72, G.y0 + G.h / 2 + s * 0.62);
+  controls.update();
+}
+function resize() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W) return;
+  renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
+}
+function setTheme() {
+  readColours();
+  scene3.background = new THREE.Color(C.bg);
+  hemi.groundColor = new THREE.Color(C.dark ? 0x222a24 : 0x8a9a8c);
+  state.dirty = true;
+}
+
+let lastLabel = -1, prevT = 0;
+function loop(now) {
+  if (state.playing) {
+    const dt = Math.max(0, Math.min(now - prevT, 100));
+    state.pos += (dt / 400) * state.speed;
+    if (state.pos >= META.frames.length - 1) { state.pos = META.frames.length - 1; setPlaying(false); }
+    state.dirty = true;
+  }
+  prevT = now;
+  if (state.dirty) {
+    state.dirty = false;
+    update3d();
+    const n = META.frames.length, k = Math.min(Math.round(state.pos), n - 1);
+    if (k !== lastLabel) {
+      lastLabel = k;
+      const f = META.frames[k];
+      $('#when').textContent = `${f.date} · ${f.sha} · commit ${f.commit + 1} of ${META.commits.toLocaleString('en')} · ${f.files} files`;
+      $('#subject').textContent = f.subject;
+    }
+    $('#scrub').value = state.pos;
+  }
+  controls.update();
+  renderer.render(scene3, camera);
+  requestAnimationFrame(loop);
+}
+function setPlaying(on) {
+  if (on && state.pos >= META.frames.length - 1) state.pos = 0;
+  state.playing = on;
+  $('#play').textContent = on ? 'Pause' : state.pos >= META.frames.length - 1 ? 'Replay' : 'Play';
+}
+
+// ---- hover: a ball, else the deepest cell under the pointer ----
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+cv.addEventListener('pointermove', (ev) => {
+  if (!last || ev.buttons) return;
+  const r = cv.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const tip = $('#tip');
+  let text = null, hotId = -1, hotDir = null;
+  const hb = ray.intersectObject(balls)[0], hg = ray.intersectObject(ground)[0];
+  if (hb && (!hg || hb.distance <= hg.distance + 0.01) && last.byInst[hb.instanceId]) {
+    const d = last.byInst[hb.instanceId];
+    hotId = d.id; hotDir = d.dir; text = `${d.path} · ${fmtSize(d.size)}`;
+  } else if (hg) {
+    const x = hg.point.x, y = hg.point.z;
+    let cell = null;
+    for (const f of last.cells) {
+      if (cell && f.depth <= cell.depth) continue;
+      for (let i = 0; i < f.discs.length; i += 3) if ((f.discs[i] - x) ** 2 + (f.discs[i + 1] - y) ** 2 < f.discs[i + 2] ** 2) { cell = f; break; }
+    }
+    if (cell) { hotDir = cell.path; text = `${cell.path}/ · ${cell.n} file${cell.n === 1 ? '' : 's'} · ${cell.depth} level${cell.depth === 1 ? '' : 's'} down`; }
+  }
+  if (hotId !== state.hotId || hotDir !== state.hotDir) { state.hotId = hotId; state.hotDir = hotDir; state.dirty = true; }
+  if (!text) { tip.hidden = true; return; }
+  tip.hidden = false; tip.textContent = text;
+  tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = ev.clientY + 16 + 'px';
+});
+cv.addEventListener('pointerleave', () => { $('#tip').hidden = true; state.hotId = -1; state.hotDir = null; state.dirty = true; });
+controls.addEventListener('start', () => { $('#hint').hidden = true; $('#tip').hidden = true; });
+
+function legend() {
+  const labels = state.colour === 0 ? META.groups : META.exts;
+  $('#legend').innerHTML = '';
+  labels.forEach((l, i) => {
+    const s = document.createElement('span');
+    const lastOne = i === labels.length - 1 && (l === 'everything else' || l === 'other');
+    s.innerHTML = `<i style="background:var(--g${lastOne ? 9 : i})"></i>`;
+    s.append(l);
+    $('#legend').append(s);
+  });
+}
+function seg(el, on) {
+  el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; for (const x of el.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b); on(b.dataset.v); });
+}
+
+(window.DOTS_DATA ? Promise.resolve([window.DOTS_DATA.meta, window.DOTS_DATA.frames]) : Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then((r) => r.text())])).then(([meta, txt]) => {
+  META = meta; BUF = Uint8Array.from(atob(txt.trim()), (c) => c.charCodeAt(0)).buffer;
+  META.colourArr = Uint8Array.from(atob(META.colour), (c) => c.charCodeAt(0));
+  $('#status').remove();
+  setTheme();
+  G = extent();
+  buildGround();
+  resize(); resetView();
+  const m = META.metrics;
+  $('#intro').textContent = `The Dot Cells layout of ${META.repo}, cut into the ground. Every file is a ball whose volume is its size. Each folder is a terrace one step lower than its parent, so a file nested five folders down sits five steps deep. Replayed over ${META.commits.toLocaleString('en')} commits in ${META.frames.length} frames; the layout remembers earlier frames but never looks ahead.`;
+  $('#score').textContent = `moves ${m.move.toFixed(2)} file widths per frame · jumps ${(m.jumps * 100).toFixed(1)}% · worst step ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file`;
+  $('#footer').innerHTML = `The layout is the flat Dot Cells page’s, unchanged: each folder lays out one clump of its own files in the middle and its subfolders on a ring around it in name order, every subfolder moving only as a whole, so cells never split or overlap. Here the ground under each folder’s cell is lowered one step per level of nesting (the slider sets the step), and each ball rests on its own folder’s floor. Terrace edges are as sharp as a ${RES} × ${RES} height grid allows. Source: <code>src/nature/dots3d.html</code> (page) and <code>src/nature/dots.ts</code> (layout); regenerate with <code>node bin/dots.ts &lt;repo&gt;</code>.`;
+  const scrub = $('#scrub');
+  scrub.max = META.frames.length - 1;
+  scrub.addEventListener('input', () => { state.pos = +scrub.value; if (state.playing) setPlaying(false); state.dirty = true; });
+  $('#play').addEventListener('click', () => setPlaying(!state.playing));
+  $('#depth').addEventListener('input', (e) => { state.step = +e.target.value; state.dirty = true; });
+  $('#fit').addEventListener('click', resetView);
+  seg($('#speed'), (v) => (state.speed = +v));
+  seg($('#colour'), (v) => { state.colour = +v; legend(); state.dirty = true; });
+  legend();
+  new ResizeObserver(resize).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setTheme);
+  new MutationObserver(setTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  window.__dots3d = { state, setPlaying };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  state.pos = reduce ? META.frames.length - 1 : 0;
+  setPlaying(!reduce);
+  requestAnimationFrame(loop);
+}).catch((e) => { const s = $('#status'); if (s) s.textContent = 'Could not load the history data: ' + e.message; });
+</script>

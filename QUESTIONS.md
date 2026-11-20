@@ -366,3 +366,9 @@ Calls made:
   angles (not ranks) so adding a sibling never turns the others. Names bunch where letters are common, so the circle is
   not used evenly; ring 0.2-0.3 was denser (39-41 u²/file) but moved more (0.19) and blurred the order. ripgrep now:
   moves 0.16, worst step 2.0, 44 u²/file, no overlaps, no split cells.
+- **3D, dug in** (Nate: "each subfolder a step down into the ground, so deeply nested files are literally deeper"):
+  same layout and data; `src/nature/dots3d.html` (three.js r160 from jsDelivr), written by `node bin/dots.ts` as
+  3d.html and standalone-3d.html. The ground is a height field: the 2D cells painted into a 384x384 grey map (deeper
+  folder = deeper), one 3x3 blur pass so walls read as cut banks rather than pixel stairs (two passes turned terraces
+  into bowls), and the 2D tints as its texture. Balls rest on their own folder's floor. Step depth defaults to 3 units
+  (margin is 1) with a slider. No folder labels in 3D; hover names balls and terraces.
