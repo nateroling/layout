@@ -366,7 +366,7 @@ function seg(el, on) {
   el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; for (const x of el.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b); on(b.dataset.v); });
 }
 
-Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then((r) => r.text())]).then(([meta, txt]) => {
+(window.DOTS_DATA ? Promise.resolve([window.DOTS_DATA.meta, window.DOTS_DATA.frames]) : Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then((r) => r.text())])).then(([meta, txt]) => {
   META = meta; BUF = Uint8Array.from(atob(txt.trim()), (c) => c.charCodeAt(0)).buffer;
   META.colourArr = Uint8Array.from(atob(META.colour), (c) => c.charCodeAt(0));
   readColours();

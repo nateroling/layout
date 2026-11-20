@@ -1,8 +1,10 @@
 // Nested dot cells viewer (experiment): one layout, src/nature/dots.ts, replayed over a repo's
 // first-parent history and written as a standalone pan/zoom page.
 //
-//   node bin/dots.ts [repoPath] [--name ripgrep] [--frames 150] [--sim 2]
-//     default repo: ../fixtures/ripgrep
+//   node bin/dots.ts [repoPath] [--name NAME] [--ref REF] [--frames 150] [--sim 2] [--out DIR]
+//     repoPath: any local git clone (absolute, or relative to where you run this); default ../fixtures/ripgrep
+//     --name: label on the page (default: the repo folder's name); --ref: branch or commit (default HEAD)
+//     --out: output folder (default out/dots/<name>)
 //
 // The layout runs on `frames * sim` evenly spaced commits (more steps = smaller moves per step) and the
 // page shows `frames` of them. Writes out/dots/: index.html, meta.json, frames.txt (base64 binary).
@@ -10,7 +12,7 @@
 // frames.txt, per frame: u16 file count, then per file { u16 id, u16 path index, u32 size, i16 x*20, i16 y*20 }.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadHistory } from '../src/git/extract.ts';
 import { applyCommit, emptyTree } from '../src/model/tree.ts';
@@ -27,10 +29,12 @@ const flag = (k: string, d: string) => {
 };
 const FRAMES = Number(flag('--frames', '150'));
 const SIM = Number(flag('--sim', '2'));
-const NAME = flag('--name', 'ripgrep');
-const repo = join(ROOT, argv[0] ?? '../fixtures/ripgrep');
+const REF = flag('--ref', 'HEAD');
+const repo = argv[0] ? resolve(argv[0]) : join(ROOT, '..', 'fixtures', 'ripgrep');
+const NAME = flag('--name', basename(repo));
+const OUT = flag('--out', '');
 
-const history = loadHistory(repo, { name: NAME });
+const history = loadHistory(repo, { name: NAME, ref: REF });
 const N = history.commits.length;
 const pick = (k: number, of: number) => Math.round(((N - 1) * k) / (of - 1));
 const simAt = new Set<number>();
@@ -50,6 +54,7 @@ const pathIdx = new Map<string, number>();
 const pid = (p: string) => {
   let i = pathIdx.get(p);
   if (i === undefined) pathIdx.set(p, (i = paths.push(p) - 1));
+  if (i > 65535) throw new Error('dots: more than 65,535 distinct paths over the history; try a later --ref or fewer --frames');
   return i;
 };
 const B = new Writer();
@@ -72,6 +77,7 @@ for (const c of history.commits) {
   seenIn.push(snap.files.map((f, i) => [ids[i], f.dir.path]));
   prev = track(moves, sc, ids, snap.files.length, prev);
   const offset = B.n;
+  if (snap.files.length > 65535 || tree.nextId > 65535) throw new Error('dots: more than 65,535 files; the frame format stores ids and counts as 16-bit');
   B.u16(snap.files.length);
   for (const m of sc.marks) {
     const f = snap.files[m.f];
@@ -119,7 +125,7 @@ for (const [id, p] of lastPath) {
   colour[id * 2 + 1] = eg.ofPath(p);
 }
 const score = metrics(moves);
-const out = join(ROOT, 'out', 'dots');
+const out = OUT ? resolve(OUT) : join(ROOT, 'out', 'dots', NAME);
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'frames.txt'), B.buf.subarray(0, B.n).toString('base64'));
 const meta = {
@@ -135,7 +141,12 @@ const meta = {
   frames,
 };
 writeFileSync(join(out, 'meta.json'), JSON.stringify(meta));
-writeFileSync(join(out, 'index.html'), readFileSync(join(ROOT, 'src', 'nature', 'dots.html'), 'utf8'));
+const page = readFileSync(join(ROOT, 'src', 'nature', 'dots.html'), 'utf8');
+writeFileSync(join(out, 'index.html'), page);
+// one self-contained file that opens straight from disk (no server needed)
+const inline = `<script>window.DOTS_DATA = ${JSON.stringify({ meta, frames: B.buf.subarray(0, B.n).toString('base64') }).replace(/</g, '\\u003c')};</script>\n`;
+writeFileSync(join(out, 'standalone.html'), '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' + inline + page);
 console.log(`dots: ${JSON.stringify(score)} ${(ms / 1000).toFixed(1)} s over ${simAt.size} steps`);
+console.log(`open ${join(out, 'standalone.html')}`);
 console.log(`wrote ${out}: ${((B.n * 4) / 3 / 1024).toFixed(0)} KB frames, meta.json ${(JSON.stringify(meta).length / 1024).toFixed(0)} KB`);
 if (process.env.DOTS_DEBUG) moves.steps.forEach((v, i) => v > 0.6 && console.log(`step ${i}->${i + 1} ${v.toFixed(2)} ${frames[i + 1].sha} ${frames[i + 1].files} ${frames[i + 1].subject}`));
