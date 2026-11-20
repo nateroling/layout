@@ -34,9 +34,24 @@ export interface DotParams {
   gapOut: number; // gap between sibling cells (and between a cell and its parent's own dots)
   pull: number; // per-iteration pull of each piece towards its folder's anchor
   iters: number; // iterations per folder per frame
+  ring: number; // radius of the ring subfolders are pulled to, times the root-sum-square of the pieces' sizes
 }
 
-export const DOT_DEFAULTS: DotParams = { margin: 1, gapIn: 0.25, gapOut: 0.5, pull: 0.02, iters: 60 };
+export const DOT_DEFAULTS: DotParams = { margin: 1, gapIn: 0.25, gapOut: 0.5, pull: 0.02, iters: 60, ring: 0.5 };
+
+/** A fixed direction for a folder name: its place in alphabetical order around the circle, case-insensitive. */
+export function nameAngle(name: string): number {
+  const s = name.toLowerCase();
+  let v = 0;
+  let scale = 1;
+  for (let k = 0; k < 8; k++) {
+    const c = s.charCodeAt(k);
+    const digit = Number.isNaN(c) ? 0 : c >= 48 && c <= 57 ? c - 47 : c >= 97 && c <= 122 ? c - 86 : c < 48 ? 0 : 37;
+    scale /= 38;
+    v += digit * scale;
+  }
+  return v * 2 * Math.PI - Math.PI / 2; // 'a' near the top, going clockwise on screen
+}
 
 /** A piece of a folder's layout: one own file, or a subfolder as a rigid cluster of dots. */
 interface Piece {
@@ -52,6 +67,9 @@ interface Piece {
   cy: number;
   br: number; // bounding radius around the mass centre (reach included)
   seed: number; // where its free-spot search starts
+  ang: number | null; // direction of its spot in the parent (null: the middle)
+  tx: number; // where its mass centre is pulled to
+  ty: number;
 }
 
 export class DotCells {
@@ -122,6 +140,7 @@ export class DotCells {
     // ---- bottom up: lay out each folder's pieces in its own frame ----
     const flat: { f: number[]; x: number[]; y: number[] }[] = new Array(nd); // dots relative to the anchor
     const offset: [number, number][] = new Array(nd); // each folder's offset in its parent, after layout
+    const clumpOff = new Map<string, [number, number]>(); // each folder's own-file clump, offset from its anchor
     for (let k = nd - 1; k >= 0; k--) {
       const d = snap.dirs[k];
       const D = d.depth;
@@ -129,19 +148,61 @@ export class DotCells {
       const pieces: Piece[] = [];
       const fresh: Piece[] = [];
       const dirPiece = new Map<number, Piece>();
-      for (const file of d.files) {
-        const i = file.i;
-        const pc = piece(true, [i], [0], [0], [r[i]], r, hash(file.path));
-        if (kept[i] && a) {
-          const p = this.prev.get(ids[i])!;
-          pc.ox = p[0] - a[0];
-          pc.oy = p[1] - a[1];
-          pieces.push(pc);
-        } else fresh.push(pc);
+      // the folder's own files first, as one clump laid out in its own frame
+      let clump: Piece | null = null;
+      if (d.files.length) {
+        const key = d.path + '/\0files';
+        const known = this.off.get(key);
+        let ca: [number, number] | null = known && a ? [a[0] + known[0], a[1] + known[1]] : null;
+        if (!ca) {
+          let sx = 0;
+          let sy = 0;
+          let sw = 0;
+          for (const file of d.files) {
+            if (!kept[file.i]) continue;
+            const p = this.prev.get(ids[file.i])!;
+            const w = r[file.i] ** 2;
+            sx += p[0] * w;
+            sy += p[1] * w;
+            sw += w;
+          }
+          if (sw) ca = [sx / sw, sy / sw];
+        }
+        const fp: Piece[] = [];
+        const ff: Piece[] = [];
+        for (const file of d.files) {
+          const i = file.i;
+          const pc = piece(true, [i], [0], [0], [r[i]], r, hash(file.path));
+          if (kept[i] && ca) {
+            const p = this.prev.get(ids[i])!;
+            pc.ox = p[0] - ca[0];
+            pc.oy = p[1] - ca[1];
+            fp.push(pc);
+          } else ff.push(pc);
+        }
+        for (const pc of ff) {
+          placeFree(pc, fp, P, pc.seed);
+          fp.push(pc);
+        }
+        relax(fp, P, P.iters);
+        const fl = { f: [] as number[], x: [] as number[], y: [] as number[] };
+        for (const pc of fp) {
+          fl.f.push(pc.f[0]);
+          fl.x.push(pc.ox);
+          fl.y.push(pc.oy);
+        }
+        clump = piece(false, fl.f, fl.x, fl.y, fl.f.map((i) => r[i]), r, hash(key));
+        clump.ang = null;
+        if (ca && a) {
+          clump.ox = ca[0] - a[0];
+          clump.oy = ca[1] - a[1];
+          pieces.push(clump);
+        } else fresh.push(clump);
       }
       for (const c of d.dirs) {
         const fl = flat[c.i];
         const pc = piece(false, fl.f, fl.x, fl.y, fl.f.map((i) => r[i] + P.margin * (fdepth[i] - D)), r, hash(c.path + '/'));
+        pc.ang = nameAngle(c.name);
         dirPiece.set(c.i, pc);
         const ca = anchor[c.i];
         if (a && ca) {
@@ -149,6 +210,13 @@ export class DotCells {
           pc.oy = ca[1] - a[1];
           pieces.push(pc);
         } else fresh.push(pc);
+      }
+      // targets: the clump in the middle, subfolders on a ring in name order, so Foo/ and FooTests/ sit side by side
+      const all = [...pieces, ...fresh];
+      const ring = all.length > 1 ? P.ring * Math.sqrt(all.reduce((t, pc) => t + pc.br * pc.br, 0)) : 0;
+      for (const pc of all) {
+        pc.tx = pc.ang === null ? 0 : ring * Math.cos(pc.ang);
+        pc.ty = pc.ang === null ? 0 : ring * Math.sin(pc.ang);
       }
       for (const pc of fresh) {
         placeFree(pc, pieces, P, pc.seed);
@@ -164,6 +232,7 @@ export class DotCells {
         }
       flat[d.i] = out;
       for (const [ci, pc] of dirPiece) offset[ci] = [pc.ox, pc.oy];
+      if (clump) clumpOff.set(d.path + '/\0files', [clump.ox, clump.oy]);
     }
 
     // ---- remember, and report global positions (root anchor = origin) ----
@@ -171,6 +240,7 @@ export class DotCells {
     this.prevDir = new Map();
     this.off = new Map();
     for (const d of snap.dirs) if (d.parent) this.off.set(d.path, offset[d.i]);
+    for (const [k, v] of clumpOff) this.off.set(k, v);
     const scene: Scene = { layout: 'dots', marks: [], shapes: [] };
     const root = flat[0];
     for (let j = 0; j < root.f.length; j++) {
@@ -199,7 +269,7 @@ function piece(file: boolean, f: number[], lx: number[], ly: number[], e: number
   const cy = sy / sw;
   let br = 0;
   for (let j = 0; j < f.length; j++) br = Math.max(br, Math.hypot(lx[j] - cx, ly[j] - cy) + e[j]);
-  return { ox: 0, oy: 0, file, f, lx, ly, e, inv: 1 / sw, cx, cy, br, seed };
+  return { ox: 0, oy: 0, file, f, lx, ly, e, inv: 1 / sw, cx, cy, br, seed, ang: null, tx: 0, ty: 0 };
 }
 
 const gapOf = (a: Piece, b: Piece, P: DotParams) => (a.file && b.file ? P.gapIn : P.gapOut);
@@ -223,7 +293,7 @@ function hits(a: Piece, b: Piece, P: DotParams, ax: number, ay: number, slack = 
 
 /** Put a piece at the free spot nearest the anchor, searching rings outwards from a hashed angle. */
 function placeFree(pc: Piece, placed: Piece[], P: DotParams, seed: number): void {
-  const a0 = (seed / 4294967296) * 2 * Math.PI;
+  const a0 = pc.ang ?? (seed / 4294967296) * 2 * Math.PI;
   const step = 0.4;
   for (let ring = 0; ring < 5000; ring++) {
     const rad = ring * step;
@@ -231,8 +301,8 @@ function placeFree(pc: Piece, placed: Piece[], P: DotParams, seed: number): void
     for (let s = 0; s < k; s++) {
       const ang = a0 + (2 * Math.PI * s) / k;
       // the piece's mass centre goes on the candidate spot
-      const ox = rad * Math.cos(ang) - pc.cx;
-      const oy = rad * Math.sin(ang) - pc.cy;
+      const ox = pc.tx + rad * Math.cos(ang) - pc.cx;
+      const oy = pc.ty + rad * Math.sin(ang) - pc.cy;
       if (!placed.some((q) => hits(pc, q, P, ox, oy))) {
         pc.ox = ox;
         pc.oy = oy;
@@ -248,6 +318,7 @@ function relax(ps: Piece[], P: DotParams, iters: number): void {
     // a lone piece sits on the anchor
     ps[0].ox = -ps[0].cx;
     ps[0].oy = -ps[0].cy;
+    ps[0].tx = ps[0].ty = 0;
     return;
   }
   const collide = (): number => {
@@ -287,8 +358,8 @@ function relax(ps: Piece[], P: DotParams, iters: number): void {
   };
   for (let it = 0; it < iters; it++) {
     for (const pc of ps) {
-      pc.ox -= (pc.ox + pc.cx) * P.pull;
-      pc.oy -= (pc.oy + pc.cy) * P.pull;
+      pc.ox += (pc.tx - pc.ox - pc.cx) * P.pull;
+      pc.oy += (pc.ty - pc.oy - pc.cy) * P.pull;
     }
     collide();
     collide();

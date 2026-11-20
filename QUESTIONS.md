@@ -359,3 +359,10 @@ Calls made:
   grey. A cell holding several groups (crates/, the root) is neutral grey.
 - **Viewer**: camera follows the whole layout until you pan or zoom (Fit returns to that); folder names on cells big
   enough to hold them, placed at the cell's top edge (toggle off).
+- **Clumps and name order** (Nate, 2026-11-20: a folder's files should clump; Foo and FooTests should be neighbours):
+  a folder's own files are laid out first as one clump (its offset is remembered like a subfolder's) and pulled to the
+  folder's middle; subfolders are pulled to a ring (radius 0.5 x root-sum-square of the pieces' sizes) at a fixed angle
+  from the name: case-insensitive, first 8 characters read as a base-38 fraction, 'a' at the top going clockwise. Fixed
+  angles (not ranks) so adding a sibling never turns the others. Names bunch where letters are common, so the circle is
+  not used evenly; ring 0.2-0.3 was denser (39-41 u²/file) but moved more (0.19) and blurred the order. ripgrep now:
+  moves 0.16, worst step 2.0, 44 u²/file, no overlaps, no split cells.

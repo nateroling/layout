@@ -142,10 +142,11 @@ const meta = {
 };
 writeFileSync(join(out, 'meta.json'), JSON.stringify(meta));
 const page = readFileSync(join(ROOT, 'src', 'nature', 'dots.html'), 'utf8');
-writeFileSync(join(out, 'index.html'), page);
+const head = '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n';
+writeFileSync(join(out, 'index.html'), head + page);
 // one self-contained file that opens straight from disk (no server needed)
 const inline = `<script>window.DOTS_DATA = ${JSON.stringify({ meta, frames: B.buf.subarray(0, B.n).toString('base64') }).replace(/</g, '\\u003c')};</script>\n`;
-writeFileSync(join(out, 'standalone.html'), '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' + inline + page);
+writeFileSync(join(out, 'standalone.html'), head + inline + page);
 console.log(`dots: ${JSON.stringify(score)} ${(ms / 1000).toFixed(1)} s over ${simAt.size} steps`);
 console.log(`open ${join(out, 'standalone.html')}`);
 console.log(`wrote ${out}: ${((B.n * 4) / 3 / 1024).toFixed(0)} KB frames, meta.json ${(JSON.stringify(meta).length / 1024).toFixed(0)} KB`);
