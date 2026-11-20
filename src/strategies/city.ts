@@ -323,6 +323,32 @@ function spiralOrient(s: CityState, path: string): { x: number; y: number } {
   return { x: c ? Math.sign(c) : po.x, y: r ? Math.sign(r) : po.y };
 }
 
+export const metroSpiralFlip = makeCity(
+  'metro-spiral-flip',
+  'Online: metro-spiral with each district\'s spiral mirrored to face away from the centre, so a folder\'s first children land on the side away from its parent.',
+  (s, p, k) => flipCell(s, p, k),
+  flipOrient,
+);
+
+/**
+ * metro-spiral-flip: the root's spiral at every depth, mirrored by the district's orientation
+ * (as metro mirrors its city grid), so the spiral starts on the side away from the parent's lot.
+ * The root is unmirrored, so at the root this is metro.
+ */
+function flipCell(s: CityState, path: string, k: number): [number, number] {
+  const o = flipOrient(s, path);
+  const [c, r] = spiralCell(k);
+  return [o.x * c, o.y * r];
+}
+function flipOrient(s: CityState, path: string): { x: number; y: number } {
+  if (path === '') return { x: 1, y: 1 };
+  const parent = dirname(path);
+  const po = flipOrient(s, parent);
+  const [c0, r0] = spiralCell(s.dirs.get(parent)!.cells.get(path)!);
+  const c = po.x * c0, r = po.y * r0;
+  return { x: c ? Math.sign(c) : po.x, y: r ? Math.sign(r) : po.y };
+}
+
 /** Step 4 of step(): widen columns/rows to fit their contents (never shrink). */
 export function ratchet(s: CityState, g: Geo, cellOf: CellFn): void {
   const paths = [...s.dirs.keys()].sort((a, b) => depth(b) - depth(a) || cmp(a, b));

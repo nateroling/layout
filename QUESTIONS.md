@@ -197,9 +197,15 @@ re-settles a little. Calls made:
 internal layout is the same at any depth (`node scripts/demo-nested.ts` draws the four-folder case one level down: metro gives
 sub/ 18 × 12, metro-spiral 18 × 9, the same as at the root). Calls made:
 - **No mirroring**: the spiral always starts right, then down, left, up, at every depth, so a district's children also land on
-  the side facing its parent. Mirroring the spiral to start away from the parent is the obvious alternative.
+  the side facing its parent. Nate asked to try the mirrored version too: `metro-spiral-flip` (below).
 - **Hugging**: a child still hugs the side of its cell facing the district's lot, and the lot hugs the corner facing the parent
   (orientation from the cell the district sits in, as in metro).
 
 Results (four public repos) vs metro: compactness about the same (chalk equal, express -1%, vue-core +5%, ripgrep equal); a bit
 less stable (moved / tree change +3% to +18%, disruption up to +54% on express). metro-pack still beats both on both axes.
+
+`metro-spiral-flip` (Nate said try it, 2026-11-20): the spiral mirrored per district so it starts away from the parent
+(`node scripts/demo-nested.ts --scene upleft` puts sub/ up-left of the root to show the difference). Compactness is identical to
+metro-spiral (mirroring doesn't change any column or row size). Stability is a little better than metro-spiral everywhere:
+equal to metro on chalk, better than metro on ripgrep (moved / tree change -4%, disruption -6%) though its p95 jump is larger,
+still worse than metro on express (+16% moved, +39% disruption) and vue-core (+18% moved). metro-pack still wins both axes.

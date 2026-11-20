@@ -1,6 +1,6 @@
 // Strategy registry. Add new strategies here.
 import type { Strategy } from '../engine.ts';
-import { city, metro, metroSpiral } from './city.ts';
+import { city, metro, metroSpiral, metroSpiralFlip } from './city.ts';
 import { metroHex, metroPack, metroSeams, metroWarp } from './metrogrid.ts';
 import { hindsight } from './hindsight.ts';
 import { recompute } from './recompute.ts';
@@ -15,6 +15,7 @@ export const strategies: Record<string, Strategy<any>> = {
   city,
   metro,
   'metro-spiral': metroSpiral,
+  'metro-spiral-flip': metroSpiralFlip,
   'metro-seams': metroSeams,
   'metro-hex': metroHex,
   'metro-warp': metroWarp,
