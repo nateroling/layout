@@ -7,7 +7,7 @@
 // their cell's centroid and weights grow or shrink until every cell's area is close to its share
 // (Nocaj & Brandes, "Computing Voronoi treemaps", 2012). All cells are convex polygons.
 
-import { fileRadius, hash, rng, type Scene, type SDir, type Snapshot } from './model.ts';
+import { fileRadius, hash, rng, type Scene, type SDir, type SFile, type Snapshot } from './model.ts';
 
 type Poly = number[]; // [x0,y0,x1,y1,...], counter-clockwise
 
@@ -86,8 +86,20 @@ function powerCells(region: Poly, xs: number[], ys: number[], ws: number[]): Pol
 
 /** Split a convex region into cells with areas proportional to `weights`. */
 export function divide(region: Poly, weights: number[], seeds: number[]): Poly[] {
+  return divideEx(region, weights, seeds).cells;
+}
+
+/** A site in region-relative terms: position in the region's bounding box (0..1) and weight / region area. */
+export type Site = [number, number, number];
+
+/**
+ * divide(), plus a warm start and inertia, for the stable variants: `init[i]` (if given) starts item i
+ * where it ended last frame; `inertia` < 1 moves each site only that fraction of the way to its cell's
+ * centroid per iteration. Returns the final sites so the caller can keep them.
+ */
+export function divideEx(region: Poly, weights: number[], seeds: number[], init?: (Site | undefined)[], inertia = 1): { cells: Poly[]; sites: Site[] } {
   const n = weights.length;
-  if (n === 1) return [region];
+  if (n === 1) return { cells: [region], sites: [[0.5, 0.5, 0]] };
   const A = area(region);
   const W = weights.reduce((s, w) => s + w, 0);
   const target = weights.map((w) => (A * w) / W);
@@ -107,6 +119,12 @@ export function divide(region: Poly, weights: number[], seeds: number[]): Poly[]
   const xs: number[] = [];
   const ys: number[] = [];
   for (let i = 0; i < n; i++) {
+    const s = init?.[i];
+    if (s) {
+      xs.push(minX + s[0] * (maxX - minX));
+      ys.push(minY + s[1] * (maxY - minY));
+      continue;
+    }
     for (let tries = 0; ; tries++) {
       const x = minX + rands[i]() * (maxX - minX);
       const y = minY + rands[i]() * (maxY - minY);
@@ -118,7 +136,14 @@ export function divide(region: Poly, weights: number[], seeds: number[]): Poly[]
     }
   }
   const ws = new Array(n).fill(A / n / 10);
+  if (init?.some((s) => s)) {
+    const known = init.filter((s): s is Site => !!s).map((s) => s[2] * A);
+    const low = Math.min(...known);
+    for (let i = 0; i < n; i++) ws[i] = init[i] ? init[i]![2] * A : low;
+  }
   let cells = powerCells(region, xs, ys, ws);
+  const snapshot = (): Site[] => xs.map((x, i) => [(x - minX) / (maxX - minX || 1), (ys[i] - minY) / (maxY - minY || 1), ws[i] / A]);
+  let bestSites = snapshot();
   // the iteration can oscillate, so keep the best diagram seen: smallest worst-case area error
   const error = (cs: Poly[]) => Math.max(...cs.map((c, i) => (c.length ? Math.abs(Math.log(area(c) / target[i])) : Infinity)));
   let best = cells;
@@ -135,7 +160,9 @@ export function divide(region: Poly, weights: number[], seeds: number[]): Poly[]
         continue;
       }
       const a = area(cells[i]);
-      [xs[i], ys[i]] = centroid(cells[i]);
+      const [cx, cy] = centroid(cells[i]);
+      xs[i] += (cx - xs[i]) * inertia;
+      ys[i] += (cy - ys[i]) * inertia;
       // weights are in area units (a weight w adds sqrt(w) to the cell's reach); any sign is fine,
       // since the diagram only depends on weight differences
       ws[i] += (0.5 * (target[i] - a)) / Math.PI;
@@ -153,17 +180,41 @@ export function divide(region: Poly, weights: number[], seeds: number[]): Poly[]
     if (e < bestErr) {
       best = cells;
       bestErr = e;
+      bestSites = snapshot();
     }
   }
-  return best;
+  return { cells: best, sites: bestSites };
 }
 
 export function cells(snap: Snapshot): Scene {
+  return cellsWith(snap);
+}
+
+/** Memory for the stable cells variants: per folder, each child's last site; per item, its smoothed weight. */
+export interface CellsMemory {
+  sites: Map<string, Map<string, Site>>;
+  weights: Map<string, number>;
+}
+
+/**
+ * cells(), with hooks for the stable variants. keyOf names a file across frames (default: its path);
+ * with `mem`, each division starts from last frame's sites (warm start); `inertia` slows the sites;
+ * `smooth` (0..1) eases each item's weight towards its new value instead of jumping.
+ */
+export function cellsWith(snap: Snapshot, o: { keyOf?: (f: SFile) => string; mem?: CellsMemory; inertia?: number; smooth?: number } = {}): Scene {
   const scene: Scene = { layout: 'cells', marks: [], shapes: [] };
+  const keyOf = o.keyOf ?? ((f: SFile) => f.path);
+  const eased = (key: string, w: number): number => {
+    if (!o.mem || o.smooth === undefined) return w;
+    const prev = o.mem.weights.get(key);
+    const v = prev === undefined ? w : prev + (w - prev) * o.smooth;
+    o.mem.weights.set(key, v);
+    return v;
+  };
   const wFile = (size: number) => fileRadius(size) ** 2 * Math.PI * 1.25;
   const wDir = new Map<SDir, number>();
   const measure = (d: SDir): number => {
-    let s = d.files.reduce((t, f) => t + wFile(f.size), 0);
+    let s = d.files.reduce((t, f) => t + eased(keyOf(f), wFile(f.size)), 0);
     for (const c of d.dirs) s += measure(c);
     wDir.set(d, s);
     return s;
@@ -174,9 +225,15 @@ export function cells(snap: Snapshot): Scene {
   for (let k = 0; k < 96; k++) root.push(R * Math.cos((2 * Math.PI * k) / 96), R * Math.sin((2 * Math.PI * k) / 96));
   const split = (d: SDir, region: Poly) => {
     if (d !== snap.root) scene.shapes.push({ k: 'poly', d: d.i, pts: region });
-    const kids = [...d.files.map((f) => ({ w: wFile(f.size), f: f.i, d: null as SDir | null })), ...d.dirs.map((c) => ({ w: wDir.get(c)!, f: -1, d: c }))];
+    const kids = [
+      ...d.files.map((f) => ({ w: o.mem && o.smooth !== undefined ? o.mem.weights.get(keyOf(f))! : wFile(f.size), f: f.i, d: null as SDir | null, key: keyOf(f) })),
+      ...d.dirs.map((c) => ({ w: wDir.get(c)!, f: -1, d: c, key: 'd:' + c.path })),
+    ];
     if (!kids.length || region.length < 6) return;
-    const parts = divide(region, kids.map((k) => k.w), kids.map((k) => hash(k.d ? k.d.path : snap.files[k.f].path)));
+    const seeds = kids.map((k) => hash(k.d ? k.d.path : snap.files[k.f].path));
+    const prev = o.mem?.sites.get(d.path);
+    const { cells: parts, sites } = divideEx(region, kids.map((k) => k.w), seeds, prev ? kids.map((k) => prev.get(k.key)) : undefined, o.inertia ?? 1);
+    if (o.mem) o.mem.sites.set(d.path, new Map(kids.map((k, i) => [k.key, sites[i]])));
     kids.forEach((k, i) => {
       const p = parts[i];
       if (k.d) split(k.d, p);

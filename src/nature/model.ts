@@ -144,10 +144,10 @@ export interface Disc {
 }
 
 /**
- * Smallest t >= 0 such that a disc of radius r at (ox,oy) + t*(dx,dy) clears every placed disc by `gap`.
+ * Smallest t >= t0 such that a disc of radius r at (ox,oy) + t*(dx,dy) clears every placed disc by `gap`.
  * (dx,dy) must be a unit vector. Exact: each placed disc blocks one interval of t.
  */
-export function rayFree(placed: Disc[], ox: number, oy: number, dx: number, dy: number, r: number, gap: number): number {
+export function rayFree(placed: Disc[], ox: number, oy: number, dx: number, dy: number, r: number, gap: number, t0 = 0): number {
   const iv: [number, number][] = [];
   for (const p of placed) {
     const R = p.r + r + gap;
@@ -163,7 +163,7 @@ export function rayFree(placed: Disc[], ox: number, oy: number, dx: number, dy: 
     if (t2 > 0) iv.push([t1, t2]);
   }
   iv.sort((a, b) => a[0] - b[0]);
-  let t = 0;
+  let t = t0;
   for (const [a, b] of iv) {
     if (a > t) break;
     if (b > t) t = b;

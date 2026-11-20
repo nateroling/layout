@@ -52,3 +52,35 @@ test('nature/cells: file cells tile the root and match their share of it within 
     assert.ok(Math.abs(ratios[Math.floor(ratios.length / 2)] - 1) < 0.1, `${s.name}: median ratio ${ratios[Math.floor(ratios.length / 2)]}`);
   }
 });
+
+test('nature stable variants: every file once per frame, deterministic replay', async () => {
+  const { VARIANTS } = await import('../src/nature/stable.ts');
+  // a growing, churning tree: frame k has files 0..10k, minus every 7th once k > 3, one folder renamed at k = 5
+  const frames = Array.from({ length: 8 }, (_, k) => {
+    const entries: [string, number][] = [];
+    for (let i = 0; i < 10 * (k + 1); i++) {
+      if (k > 3 && i % 7 === 0) continue;
+      const dir = i % 3 === 0 ? (k >= 5 ? 'lib2' : 'lib') : i % 3 === 1 ? 'src/a' : 'src/b/c';
+      entries.push([`${dir}/f${i}.ts`, 100 + i * 37]);
+    }
+    return buildSnapshot('t', entries);
+  });
+  const idOf = (path: string) => Number(path.match(/f(\d+)\.ts$/)![1]);
+  const run = (v: (typeof VARIANTS)[number]) => {
+    const step = v.make();
+    const seq = new Map<string, number>();
+    return frames.map((snap) => {
+      for (const d of snap.dirs) if (!seq.has(`d:${d.path}`)) seq.set(`d:${d.path}`, seq.size);
+      for (const f of snap.files) if (!seq.has(`f:${idOf(f.path)}`)) seq.set(`f:${idOf(f.path)}`, seq.size);
+      return step(snap, { id: (f) => idOf(f.path), seq: (k) => seq.get(k)! });
+    });
+  };
+  for (const v of VARIANTS) {
+    const a = run(v);
+    a.forEach((sc, k) => {
+      assert.deepEqual(sc.marks.map((m) => m.f).sort((x, y) => x - y), frames[k].files.map((f) => f.i), `${v.name} frame ${k}`);
+      for (const m of sc.marks) assert.ok(Number.isFinite(m.x) && Number.isFinite(m.y), `${v.name} frame ${k}: finite`);
+    });
+    assert.deepEqual(run(v), a, `${v.name}: deterministic`);
+  }
+});

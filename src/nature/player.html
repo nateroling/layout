@@ -40,7 +40,7 @@ input[type=range] { flex: 1 1 260px; accent-color: var(--accent); min-width: 0; 
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px var(--mono); color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
 figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; display: grid; grid-template-rows: auto 1fr; overflow: hidden; min-width: 0; }
 figcaption { padding: 12px 16px 4px; display: grid; gap: 2px; }
 figcaption h2 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 0; display: flex; align-items: baseline; gap: 10px; }
@@ -55,11 +55,23 @@ canvas { width: 100%; aspect-ratio: 1; display: block; cursor: crosshair; }
 footer { color: var(--muted); font-size: 13px; max-width: 80ch; }
 footer code { font-family: var(--mono); font-size: 12px; }
 #status { color: var(--muted); font-size: 13px; }
+.score { font: 12px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.scores { display: grid; gap: 8px; }
+.scores h2 { font-family: var(--display); font-size: 22px; margin: 8px 0 0; }
+.scores p { margin: 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
+.tablewrap { overflow-x: auto; }
+.scores table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 560px; }
+.scores th, .scores td { text-align: left; padding: 5px 14px 5px 0; border-bottom: 1px solid var(--rule); }
+.scores td:nth-child(n+3) { text-align: right; font-family: var(--mono); font-size: 12px; }
+.scores thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+.scores thead th:nth-child(n+3) { text-align: right; }
+.scores tbody th { font-family: var(--display); font-weight: 700; }
+.scores tr.on td, .scores tr.on th { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 </style>
 
 <div class="wrap">
   <header>
-    <h1>Grown code cities, animated</h1>
+    <h1>Grown code cities, steadied</h1>
     <p id="intro">The five nature layouts replayed over a repo’s whole history. Each frame is laid out from scratch, with no memory of the last one, and the player glides between frames. Hover a file to light up its folder in all five.</p>
   </header>
   <div class="clock">
@@ -69,56 +81,78 @@ footer code { font-family: var(--mono); font-size: 12px; }
       <span class="when" id="when"></span>
     </div>
     <div class="row">
+      <div><span class="lab">Layout</span><span class="seg" id="family"></span></div>
+    </div>
+    <div class="row">
       <span class="subject" id="subject"></span>
       <div><span class="lab">Speed</span><span class="seg" id="speed"><button type="button" id="s-05" data-v="0.5" aria-pressed="false">½×</button><button type="button" id="s-1" data-v="1" aria-pressed="true">1×</button><button type="button" id="s-2" data-v="2" aria-pressed="false">2×</button><button type="button" id="s-4" data-v="4" aria-pressed="false">4×</button></span></div>
       <div><span class="lab">Colour</span><span class="seg" id="colour"><button type="button" id="c-folder" data-v="0" aria-pressed="true">Folder</button><button type="button" id="c-ext" data-v="1" aria-pressed="false">File type</button></span></div>
     </div>
   </div>
   <div class="legend" id="legend"></div>
-  <div id="status">Loading history…</div>
-  <div class="grid" id="grid"></div>
-  <footer>Frames are evenly spaced commits on the first-parent history. Files keep their identity (and colour) through renames, so moves glide instead of popping. Folder colours come from the final tree. Source: <code>src/nature/</code>, regenerate with <code>node bin/nature-anim.ts</code>.</footer>
+  <div class="grid" id="grid"><div id="status">Loading history…</div></div>
+  <section class="scores">
+    <h2>Movement by variant</h2>
+    <p>Measured over every frame step: how far each file that exists in both frames moved, in file widths (the square root of the layout’s area per file), with the root pinned where the layout puts it. <b>Moves</b> is the mean per file per step; <b>jumps</b> the share of moves over two widths; <b>worst step</b> the largest mean over one step, which is when a big subtree shifted; <b>u²/file</b> is the bounding box per file, so lower is denser.</p>
+    <div class="tablewrap" id="scores"></div>
+  </section>
+  <footer>Frames are evenly spaced commits on the first-parent history; the variations that remember only see those frames. Folders are matched by path, so a renamed folder counts as new. Files keep their identity (and colour) through renames, so moves glide instead of popping. Folder colours come from the final tree. Source: <code>src/nature/</code>, regenerate with <code>node bin/nature-anim.ts</code>.</footer>
 </div>
 <div id="tip" hidden></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-let META, BUF, FR = [], panels = [];
-const state = { pos: 0, playing: false, speed: 1, colour: 0, hotDir: null, hotId: -1 };
+let META, BUF, panels = [];
+const state = { fam: 0, pos: 0, playing: false, speed: 1, colour: 0, hotDir: null, hotId: -1 };
 let C = {};
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function readColours() { C = { bg: css('--panel'), ink: css('--ink'), muted: css('--muted'), rule: css('--rule'), bark: css('--bark'), hilite: css('--hilite'), g: Array.from({ length: 10 }, (_, i) => css('--g' + i)) }; }
 const fmtSize = (b) => (b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB');
 
 // ---- decoding (see bin/nature-anim.ts for the record layout) ----
-function decode(k) {
-  if (FR[k]) return FR[k];
-  const dv = new DataView(BUF), o = { p: META.frames[k].offset };
-  const u8 = () => dv.getUint8(o.p++), u16 = () => { const v = dv.getUint16(o.p, true); o.p += 2; return v; };
-  const u32 = () => { const v = dv.getUint32(o.p, true); o.p += 4; return v; };
-  const xy = () => { const v = dv.getInt16(o.p, true); o.p += 2; return v / 20; };
-  const nf = u16(), nd = u16();
-  const files = [], dirs = [];
-  for (let i = 0; i < nf; i++) files.push({ id: u16(), path: META.paths[u16()], size: u32() });
-  for (let i = 0; i < nd; i++) { const path = META.paths[u16()]; dirs.push({ path, parent: u16() }); }
+const HEAD = [], FAM = {}, FAMBUF = {};
+function reader(buf, p) {
+  const dv = new DataView(buf), o = { p };
+  return {
+    o, u8: () => dv.getUint8(o.p++), u16: () => { const v = dv.getUint16(o.p, true); o.p += 2; return v; },
+    u32: () => { const v = dv.getUint32(o.p, true); o.p += 4; return v; }, xy: () => { const v = dv.getInt16(o.p, true); o.p += 2; return v / 20; },
+  };
+}
+function header(k) {
+  if (HEAD[k]) return HEAD[k];
+  const R = reader(BUF, META.frames[k].offset);
+  const nf = R.u16(), nd = R.u16(), files = [], dirs = [];
+  for (let i = 0; i < nf; i++) files.push({ id: R.u16(), path: META.paths[R.u16()], size: R.u32() });
+  for (let i = 0; i < nd; i++) { const path = META.paths[R.u16()]; dirs.push({ path, parent: R.u16() }); }
   for (const f of files) f.dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
-  const marks = () => files.map((f) => ({ id: f.id, x: xy(), y: xy(), r: u8() / 50 }));
-  const L = {};
-  // sunflower
-  L.sunflower = { marks: marks(), dirs: dirs.map((d) => ({ key: d.path, x: xy(), y: xy(), r: u16() / 20 })) };
-  L.tree = { marks: marks(), dirs: dirs.map((d) => ({ key: d.path, bx: xy(), by: xy(), tx: xy(), ty: xy(), w0: u8() / 20, w1: u8() / 20 })) };
-  const cm = files.map((f) => { const m = { id: f.id, x: xy(), y: xy(), r: u8() / 50, rays: [] }; for (let j = 0; j < 16; j++) m.rays.push(u8() / 64); return m; });
-  const cd = dirs.map((d) => { const m = { key: d.path, x: xy(), y: xy(), r: u16() / 20, rays: [] }; for (let j = 0; j < 24; j++) m.rays.push(u8() / 64); return m; });
-  L.cells = { marks: cm, dirs: cd.filter((d) => d.r > 0) };
-  const co = marks();
-  const anchors = files.map(() => u16());
-  L.coral = { marks: co, links: anchors.map((a, i) => (a === 0xffff ? null : [files[a].id, files[i].id])).filter(Boolean) };
-  const ga = marks(), arms = [], na = u8();
-  for (let a = 0; a < na; a++) { const pts = []; for (let j = 0; j < 24; j++) pts.push(xy(), xy()); const w = []; for (let j = 0; j < 24; j++) w.push(u8() / 10); arms.push({ key: a, pts, w }); }
-  L.galaxy = { marks: ga, arms };
-  for (const name in L) { const l = L[name]; l.byId = new Map(l.marks.map((m) => [m.id, m])); l.b = bounds(l); }
-  const info = new Map(files.map((f) => [f.id, f]));
-  return (FR[k] = { files, info, L });
+  return (HEAD[k] = { files, dirs, info: new Map(files.map((f) => [f.id, f])) });
+}
+const PARSE = {
+  sunflower: (R, files, dirs, marks) => ({ marks: marks(), dirs: dirs.map((d) => ({ key: d.path, x: R.xy(), y: R.xy(), r: R.u16() / 20 })) }),
+  tree: (R, files, dirs, marks) => ({ marks: marks(), dirs: dirs.map((d) => ({ key: d.path, bx: R.xy(), by: R.xy(), tx: R.xy(), ty: R.xy(), w0: R.u8() / 20, w1: R.u8() / 20 })) }),
+  cells: (R, files, dirs) => {
+    const cm = files.map((f) => { const m = { id: f.id, x: R.xy(), y: R.xy(), r: R.u8() / 50, rays: [] }; for (let j = 0; j < 16; j++) m.rays.push(R.u8() / 64); return m; });
+    const cd = dirs.map((d) => { const m = { key: d.path, x: R.xy(), y: R.xy(), r: R.u16() / 20, rays: [] }; for (let j = 0; j < 24; j++) m.rays.push(R.u8() / 64); return m; });
+    return { marks: cm, dirs: cd.filter((d) => d.r > 0) };
+  },
+  coral: (R, files, dirs, marks) => {
+    const co = marks(), anchors = files.map(() => R.u16());
+    return { marks: co, links: anchors.map((a, i) => (a === 0xffff ? null : [files[a].id, files[i].id])).filter(Boolean) };
+  },
+  galaxy: (R, files, dirs, marks) => {
+    const ga = marks(), arms = [], na = R.u8();
+    for (let a = 0; a < na; a++) { const pts = []; for (let j = 0; j < 24; j++) pts.push(R.xy(), R.xy()); const w = []; for (let j = 0; j < 24; j++) w.push(R.u8() / 10); arms.push({ key: a, pts, w }); }
+    return { marks: ga, arms };
+  },
+};
+/** Frame k of the current family: the shared header plus one layout per variant. */
+function decode(k) {
+  const fam = META.families[state.fam], cache = (FAM[fam.name] ||= []);
+  if (cache[k]) return cache[k];
+  const h = header(k), R = reader(FAMBUF[fam.name], fam.offsets[k]);
+  const marks = () => h.files.map((f) => ({ id: f.id, x: R.xy(), y: R.xy(), r: R.u8() / 50 }));
+  const L = fam.variants.map(() => { const l = PARSE[fam.name](R, h.files, h.dirs, marks); l.b = bounds(l); return l; });
+  return (cache[k] = { files: h.files, info: h.info, L });
 }
 function bounds(l) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -150,11 +184,11 @@ function colourOf(id) {
 function inHot(path) { const h = state.hotDir; return h === null || h === '' || path === h || path.startsWith(h + '/'); }
 
 function draw(p, A, B, t) {
-  const cv = p.canvas, ctx = p.ctx, name = p.name;
+  const cv = p.canvas, ctx = p.ctx, name = p.kind;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
   if (!W) return;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
-  const la = A.L[name], lb = B.L[name];
+  const la = A.L[p.vi], lb = B.L[p.vi];
   const b = { x0: lerp(la.b.x0, lb.b.x0, t), y0: lerp(la.b.y0, lb.b.y0, t), x1: lerp(la.b.x1, lb.b.x1, t), y1: lerp(la.b.y1, lb.b.y1, t) };
   const pad = 14, s = Math.min((W - 2 * pad) / (b.x1 - b.x0), (H - 2 * pad) / (b.y1 - b.y0));
   p.view = { s, ox: (W - s * (b.x1 + b.x0)) / 2, oy: (H - s * (b.y1 + b.y0)) / 2 };
@@ -228,6 +262,7 @@ function cellPath(ctx, x, y, r, rays) {
 
 let lastLabel = -1;
 function render() {
+  if (!panels.length || !FAMBUF[META.families[state.fam].name]) return;
   const n = META.frames.length, i = Math.min(Math.floor(state.pos), n - 1), j = Math.min(i + 1, n - 1);
   const A = decode(i), B = decode(j), t = ease(state.pos - i);
   for (const p of panels) draw(p, A, B, t);
@@ -237,7 +272,7 @@ function render() {
     const f = META.frames[k];
     $('#when').textContent = `${f.date} · ${f.sha} · commit ${f.commit + 1} of ${META.commits} · ${f.files} files`;
     $('#subject').textContent = f.subject;
-    for (const p of panels) { const b = decode(k).L[p.name].b; p.dims.textContent = `${Math.round(b.x1 - b.x0)} × ${Math.round(b.y1 - b.y0)}`; }
+    for (const p of panels) { const b = decode(k).L[p.vi].b; p.dims.textContent = `${Math.round(b.x1 - b.x0)} × ${Math.round(b.y1 - b.y0)}`; }
   }
   $('#scrub').value = state.pos;
 }
@@ -245,7 +280,7 @@ function render() {
 let prevT = 0;
 function tick(now) {
   if (!state.playing) return;
-  const dt = Math.min(now - prevT, 100); prevT = now;
+  const dt = Math.max(0, Math.min(now - prevT, 100)); prevT = now;
   state.pos += (dt / 450) * state.speed;
   if (state.pos >= META.frames.length - 1) { state.pos = META.frames.length - 1; setPlaying(false); }
   render();
@@ -286,6 +321,61 @@ function hover(p, ev) {
   tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = ev.clientY + 16 + 'px';
 }
 
+const fmtM = (m) => `moves ${m.move.toFixed(2)} · jumps ${(m.jumps * 100).toFixed(1)}% · worst ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file`;
+function loadFamily(fam) {
+  if (FAMBUF[fam.name]) return Promise.resolve();
+  return fetch(fam.name + '.txt').then((r) => r.text()).then((t) => { FAMBUF[fam.name] = Uint8Array.from(atob(t.trim()), (c) => c.charCodeAt(0)).buffer; });
+}
+let firstShow = true;
+function showFamily(i, initial) {
+  state.fam = i;
+  const fam = META.families[i];
+  for (const b of $('#family').querySelectorAll('button')) b.setAttribute('aria-pressed', +b.dataset.v === i);
+  if (!initial && location.hash !== '#' + fam.name) history.replaceState(null, '', '#' + fam.name);
+  for (const r of document.querySelectorAll('#scores tbody tr')) r.classList.toggle('on', r.dataset.fam === fam.name);
+  const grid = $('#grid');
+  grid.innerHTML = '<div id="status">Loading ' + fam.title.toLowerCase() + '…</div>';
+  panels = [];
+  lastLabel = -1;
+  loadFamily(fam).then(() => {
+    if (state.fam !== i) return;
+    grid.innerHTML = '';
+    fam.variants.forEach((v, vi) => {
+      const fig = document.createElement('figure');
+      const title = vi === 0 ? `${fam.title}, original` : v.title;
+      fig.innerHTML = `<figcaption><h2>${title}<small></small><button type="button" class="zoom" id="zoom-${v.name}" aria-pressed="false">Enlarge</button></h2><div class="score"></div><p></p></figcaption><canvas role="img" aria-label="${title} over time"></canvas>`;
+      fig.querySelector('p').textContent = vi === 0 ? fam.blurb : v.blurb;
+      fig.querySelector('.score').textContent = fmtM(v.metrics);
+      grid.append(fig);
+      const canvas = fig.querySelector('canvas');
+      const p = { kind: fam.name, vi, canvas, ctx: canvas.getContext('2d'), dims: fig.querySelector('small') };
+      panels.push(p);
+      canvas.addEventListener('pointermove', (ev) => hover(p, ev));
+      canvas.addEventListener('pointerleave', () => { state.hotDir = null; state.hotId = -1; $('#tip').hidden = true; if (!state.playing) render(); });
+      fig.querySelector('.zoom').addEventListener('click', (e) => {
+        const big = fig.classList.toggle('big');
+        e.target.textContent = big ? 'Shrink' : 'Enlarge'; e.target.setAttribute('aria-pressed', big);
+        render(); if (big) fig.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    });
+    if (firstShow) {
+      firstShow = false;
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      state.pos = reduce ? META.frames.length - 1 : 0;
+      render();
+      setPlaying(!reduce);
+    } else render();
+  });
+}
+function scoreTable() {
+  const rows = META.families.flatMap((f) => f.variants.map((v, vi) => {
+    const m = v.metrics, base = f.variants[0].metrics;
+    const rel = vi ? `${Math.round((m.move / base.move) * 100)}%` : '100%';
+    return `<tr data-fam="${f.name}"><th scope="row">${vi === 0 ? f.title : ''}</th><td>${vi === 0 ? 'original' : v.title}</td><td>${m.move.toFixed(2)}</td><td>${rel}</td><td>${(m.jumps * 100).toFixed(1)}%</td><td>${m.worst.toFixed(1)}</td><td>${Math.round(m.density)}</td></tr>`;
+  })).join('');
+  $('#scores').innerHTML = `<table><thead><tr><th scope="col">Layout</th><th scope="col">Variant</th><th scope="col">Moves</th><th scope="col">vs original</th><th scope="col">Jumps</th><th scope="col">Worst step</th><th scope="col">u²/file</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function seg(el, on) {
   el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; for (const x of el.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b); on(b.dataset.v); });
 }
@@ -295,24 +385,13 @@ Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then(
   META.colourArr = Uint8Array.from(atob(META.colour), (c) => c.charCodeAt(0));
   readColours();
   $('#status').remove();
-  $('#intro').textContent = `The five nature layouts replayed over ${META.repo}’s history: ${META.frames.length} frames across ${META.commits.toLocaleString('en')} commits. Each frame is laid out from scratch, with no memory of the last one, and the player glides between frames. Hover a file to light up its folder in all five.`;
-  const grid = $('#grid');
-  for (const L of META.layouts) {
-    const fig = document.createElement('figure');
-    fig.innerHTML = `<figcaption><h2>${L.title}<small></small><button type="button" class="zoom" id="zoom-${L.name}" aria-pressed="false">Enlarge</button></h2><p></p></figcaption><canvas role="img" aria-label="${L.title} layout over time"></canvas>`;
-    fig.querySelector('p').textContent = L.blurb;
-    grid.append(fig);
-    const canvas = fig.querySelector('canvas');
-    const p = { name: L.name, canvas, ctx: canvas.getContext('2d'), dims: fig.querySelector('small') };
-    panels.push(p);
-    canvas.addEventListener('pointermove', (ev) => hover(p, ev));
-    canvas.addEventListener('pointerleave', () => { state.hotDir = null; state.hotId = -1; $('#tip').hidden = true; if (!state.playing) render(); });
-    fig.querySelector('.zoom').addEventListener('click', (e) => {
-      const big = fig.classList.toggle('big');
-      e.target.textContent = big ? 'Shrink' : 'Enlarge'; e.target.setAttribute('aria-pressed', big);
-      render(); if (big) fig.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
-  }
+  $('#intro').textContent = `The five nature layouts and three steadier variations of each, replayed over ${META.repo}’s history: ${META.frames.length} frames across ${META.commits.toLocaleString('en')} commits. Pick a layout to see the original beside its variations. The variations may remember earlier frames but never peek at later ones. Hover a file to light up its folder.`;
+  $('#family').innerHTML = META.families.map((f, i) => `<button type="button" id="f-${f.name}" data-v="${i}" aria-pressed="${i === 0}">${f.title}</button>`).join('');
+  seg($('#family'), (v) => showFamily(+v));
+  scoreTable();
+  const start = META.families.findIndex((f) => '#' + f.name === location.hash);
+  window.addEventListener('hashchange', () => { const i = META.families.findIndex((f) => '#' + f.name === location.hash); if (i >= 0 && i !== state.fam) showFamily(i); });
+  showFamily(start >= 0 ? start : 0, true);
   const scrub = $('#scrub');
   scrub.max = META.frames.length - 1;
   scrub.addEventListener('input', () => { state.pos = +scrub.value; if (state.playing) setPlaying(false); render(); });
@@ -320,11 +399,7 @@ Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then(
   seg($('#speed'), (v) => (state.speed = +v));
   seg($('#colour'), (v) => { state.colour = +v; legend(); render(); });
   legend();
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  state.pos = reduce ? META.frames.length - 1 : 0;
-  render();
-  if (!reduce) setPlaying(true); else setPlaying(false);
-  new ResizeObserver(() => render()).observe(grid);
+  new ResizeObserver(() => { if (panels.length && FAMBUF[META.families[state.fam].name]) render(); }).observe($('#grid'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); render(); });
   new MutationObserver(() => { readColours(); render(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }).catch((e) => { $('#status').textContent = 'Could not load the history data: ' + e.message; });

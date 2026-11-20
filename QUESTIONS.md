@@ -235,3 +235,25 @@ https://claude.ai/artifact/4Txx1GTB2txJUHojnctfza, ~2.2 MB). Calls made:
   others (much smoother over time; also changed the static page slightly).
 - **Colours**: by identity, from the folder groups of the final tree, so a file keeps its colour through the crates/ move.
 - **Encoding**: quantised binary (1/20 unit), shipped as base64 text because artifacts don't serve .bin files.
+
+Stable variations (Nate asked for three more stable versions of each, 2026-11-20): `src/nature/stable.ts`, 15 variants, all in
+the animated page (pick a layout to see the original beside its three; scores table at the bottom). Movement metric: mean
+displacement per surviving file per frame step, in file widths (sqrt of bbox area per file), root pinned where each layout
+puts it; plus jumps (> 2 widths), worst single step (a big subtree shifting) and bbox u²/file. ripgrep, 120 frames:
+
+| layout | original moves | best variant | moves | density cost |
+|---|---|---|---|---|
+| sunflower | 1.25 | Sticky | 0.09 (7%) | 28 → 85 u²/file |
+| tree | 0.19 | Apical growth | 0.04 (21%) | 28 → 21 (denser, subtrees cross) |
+| cells | 0.56 | Warm + inertia | 0.16 (29%) | none |
+| coral | 3.17 | Living colony | 0.04 (1%) | none (moves-stay variant: 0) |
+| galaxy | 0.29 | Fixed orbits | 0.08 (27%) | 25 → 35 |
+
+Calls made:
+- **Stateful variants step only through the sampled frames** (every ~19 commits), not every commit, to keep the build fast.
+- **Folders are matched by path**, so the crates/ move counts as new folders for the stateful variants; files follow renames.
+- **Sunflower variants don't re-centre heads** (re-centring moves every child), which is why they are 2-4x sparser; a newcomer
+  takes the innermost of the next 12 golden-angle slots to limit that.
+- **Coral polyps keep their birth size** in the living-colony variants (a grown file would otherwise overlap its neighbours).
+- **Galaxy variants use a fixed 3 arms** (the original picks 2-4 by size, which reshuffles everything when the count changes).
+- Birth-order variants for coral and galaxy barely help or are worse; kept as the honest stateless baseline.
