@@ -60,7 +60,7 @@ footer code { font-family: var(--mono); font-size: 12px; }
 <div class="wrap">
   <header>
     <h1>Dot cells, dug in</h1>
-    <p id="intro">Every file is a ball and each folder is a terrace cut one step deeper than its parent.</p>
+    <p id="intro">Every file is a hut and each folder is a terrace cut one step deeper than its parent.</p>
   </header>
   <div class="clock">
     <div class="row">
@@ -71,14 +71,14 @@ footer code { font-family: var(--mono); font-size: 12px; }
     <div class="row">
       <span class="subject" id="subject"></span>
       <div><span class="lab">Speed</span><span class="seg" id="speed"><button type="button" data-v="0.5" aria-pressed="false">½×</button><button type="button" data-v="1" aria-pressed="true">1×</button><button type="button" data-v="2" aria-pressed="false">2×</button><button type="button" data-v="4" aria-pressed="false">4×</button></span></div>
-      <div><span class="lab">Balls</span><span class="seg" id="colour"><button type="button" data-v="0" aria-pressed="true">Folder</button><button type="button" data-v="1" aria-pressed="false">File type</button></span></div>
-      <label class="depthctl"><span class="lab">Step depth</span><input type="range" id="depth" min="0" max="8" step="0.25" value="3" aria-label="Step depth per folder level"></label>
+      <div><span class="lab">Huts</span><span class="seg" id="colour"><button type="button" data-v="0" aria-pressed="true">Folder</button><button type="button" data-v="1" aria-pressed="false">File type</button></span></div>
+      <label class="depthctl"><span class="lab">Step depth</span><input type="range" id="depth" min="0" max="1.5" step="0.05" value="0.3" aria-label="Step depth per folder level"></label>
       <button type="button" class="ghost" id="fit">Reset view</button>
     </div>
   </div>
   <div class="legend" id="legend"></div>
   <div class="plate">
-    <canvas id="cv" role="img" aria-label="The repository as terraced cells of file balls, over time"></canvas>
+    <canvas id="cv" role="img" aria-label="The repository as terraced cells of file huts, over time"></canvas>
     <div class="hint" id="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom · hover for names</div>
     <div id="status">Loading history…</div>
   </div>
@@ -98,7 +98,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const $ = (s) => document.querySelector(s);
 let META, BUF;
-const state = { pos: 0, playing: false, speed: 1, colour: 0, step: 3, hotDir: null, hotId: -1, dirty: true };
+const state = { pos: 0, playing: false, speed: 1, colour: 0, step: 0.3, hotDir: null, hotId: -1, dirty: true };
 let C = {};
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
@@ -201,6 +201,7 @@ function cells(dots) {
 
 
 // ---- the ground: a height field cut from the cells, one step per folder level ----
+const HUT = 1.5; // hut height, the same for every file; the default step is 20% of it
 const RES = 384, TEX = 1024, LEVEL = 24; // height canvas, colour canvas, grey per level in the height canvas
 let G = null; // { x0, y0, w, h } world extent of the ground
 const hcv = document.createElement('canvas'), hctx = hcv.getContext('2d', { willReadFrequently: true });
@@ -245,17 +246,17 @@ controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49;
 const hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 1.1); scene3.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(-0.6, 1, -0.35); scene3.add(sun);
 const tex = new THREE.CanvasTexture(tcv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-let ground, groundGeo, balls, ballMax = 0;
+let ground, groundGeo, huts, hutMax = 0;
 function buildGround() {
   groundGeo = new THREE.PlaneGeometry(G.w, G.h, RES - 1, RES - 1);
   groundGeo.rotateX(-Math.PI / 2);
   groundGeo.translate(G.x0 + G.w / 2, 0, G.y0 + G.h / 2);
   ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 }));
   scene3.add(ground);
-  for (let k = 0; k < META.frames.length; k++) ballMax = Math.max(ballMax, frame(k).dots.length + (k ? frame(k - 1).dots.length : 0));
-  balls = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 22, 16), new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0 }), ballMax);
-  balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  scene3.add(balls);
+  for (let k = 0; k < META.frames.length; k++) hutMax = Math.max(hutMax, frame(k).dots.length + (k ? frame(k - 1).dots.length : 0));
+  huts = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 32).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0 }), hutMax);
+  huts.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene3.add(huts);
 }
 const tmp = new THREE.Object3D(), col = new THREE.Color();
 let last = null;
@@ -284,25 +285,25 @@ function update3d() {
   tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.fillStyle = C.bg; tctx.fillRect(0, 0, TEX, TEX);
   paintCells(tctx, TEX, cl, (f) => tint(f.group === undefined || f.group === 9 ? -1 : f.group, f.depth, state.hotDir !== null && f.path === state.hotDir));
   tex.needsUpdate = true;
-  // balls rest on their folder's floor
+  // huts stand on their folder's floor: footprint = the file's dot, height fixed
   let n = 0;
   for (const d of dots) {
     if (d.k <= 0.001) continue;
     const r = d.r * d.k;
-    tmp.position.set(d.x, -d.depth * state.step + r, d.y); tmp.scale.setScalar(r); tmp.updateMatrix();
-    balls.setMatrixAt(n, tmp.matrix);
+    tmp.position.set(d.x, -d.depth * state.step, d.y); tmp.scale.set(r, HUT * d.k, r); tmp.updateMatrix();
+    huts.setMatrixAt(n, tmp.matrix);
     const g = META.colourArr[d.id * 2 + state.colour];
     col.set(C.g[g === 255 || g === undefined ? 9 : g]);
     if (state.hotId === d.id) col.offsetHSL(0, 0, 0.18);
-    balls.setColorAt(n, col);
+    huts.setColorAt(n, col);
     d.inst = n++;
   }
-  balls.count = n; balls.instanceMatrix.needsUpdate = true; if (balls.instanceColor) balls.instanceColor.needsUpdate = true;
+  huts.count = n; huts.instanceMatrix.needsUpdate = true; if (huts.instanceColor) huts.instanceColor.needsUpdate = true;
   last.byInst = dots.filter((d) => d.k > 0.001);
 }
 function resetView() {
   const s = G.w;
-  controls.target.set(G.x0 + G.w / 2, -state.step * 2, G.y0 + G.h / 2);
+  controls.target.set(G.x0 + G.w / 2, -state.step, G.y0 + G.h / 2);
   camera.position.set(G.x0 + G.w / 2 - s * 0.04, s * 0.72, G.y0 + G.h / 2 + s * 0.62);
   controls.update();
 }
@@ -349,7 +350,7 @@ function setPlaying(on) {
   $('#play').textContent = on ? 'Pause' : state.pos >= META.frames.length - 1 ? 'Replay' : 'Play';
 }
 
-// ---- hover: a ball, else the deepest cell under the pointer ----
+// ---- hover: a hut, else the deepest cell under the pointer ----
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 cv.addEventListener('pointermove', (ev) => {
   if (!last || ev.buttons) return;
@@ -358,7 +359,7 @@ cv.addEventListener('pointermove', (ev) => {
   ray.setFromCamera(ndc, camera);
   const tip = $('#tip');
   let text = null, hotId = -1, hotDir = null;
-  const hb = ray.intersectObject(balls)[0], hg = ray.intersectObject(ground)[0];
+  const hb = ray.intersectObject(huts)[0], hg = ray.intersectObject(ground)[0];
   if (hb && (!hg || hb.distance <= hg.distance + 0.01) && last.byInst[hb.instanceId]) {
     const d = last.byInst[hb.instanceId];
     hotId = d.id; hotDir = d.dir; text = `${d.path} · ${fmtSize(d.size)}`;
@@ -403,9 +404,9 @@ function seg(el, on) {
   buildGround();
   resize(); resetView();
   const m = META.metrics;
-  $('#intro').textContent = `The Dot Cells layout of ${META.repo}, cut into the ground. Every file is a ball whose volume is its size. Each folder is a terrace one step lower than its parent, so a file nested five folders down sits five steps deep. Replayed over ${META.commits.toLocaleString('en')} commits in ${META.frames.length} frames; the layout remembers earlier frames but never looks ahead.`;
+  $('#intro').textContent = `The Dot Cells layout of ${META.repo}, cut into the ground. Every file is a hut: all the same height, with the footprint of its dot on the flat page (volume of that dot = file size). Each folder is a shallow terrace one step lower than its parent, so a file nested five folders down stands five steps deep. Replayed over ${META.commits.toLocaleString('en')} commits in ${META.frames.length} frames; the layout remembers earlier frames but never looks ahead.`;
   $('#score').textContent = `moves ${m.move.toFixed(2)} file widths per frame · jumps ${(m.jumps * 100).toFixed(1)}% · worst step ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file`;
-  $('#footer').innerHTML = `The layout is the flat Dot Cells page’s, unchanged: each folder lays out one clump of its own files in the middle and its subfolders on a ring around it in name order, every subfolder moving only as a whole, so cells never split or overlap. Here the ground under each folder’s cell is lowered one step per level of nesting (the slider sets the step), and each ball rests on its own folder’s floor. Terrace edges are as sharp as a ${RES} × ${RES} height grid allows. Source: <code>src/nature/dots3d.html</code> (page) and <code>src/nature/dots.ts</code> (layout); regenerate with <code>node bin/dots.ts &lt;repo&gt;</code>.`;
+  $('#footer').innerHTML = `The layout is the flat Dot Cells page’s, unchanged: each folder lays out one clump of its own files in the middle and its subfolders on a ring around it in name order, every subfolder moving only as a whole, so cells never split or overlap. Here the ground under each folder’s cell is lowered one step per level of nesting (the slider sets the step), and each hut stands on its own folder’s floor. Huts are all ${HUT} units tall; a step defaults to 20% of that. Terrace edges are as sharp as a ${RES} × ${RES} height grid allows. Source: <code>src/nature/dots3d.html</code> (page) and <code>src/nature/dots.ts</code> (layout); regenerate with <code>node bin/dots.ts &lt;repo&gt;</code>.`;
   const scrub = $('#scrub');
   scrub.max = META.frames.length - 1;
   scrub.addEventListener('input', () => { state.pos = +scrub.value; if (state.playing) setPlaying(false); state.dirty = true; });

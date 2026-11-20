@@ -372,3 +372,5 @@ Calls made:
   folder = deeper), one 3x3 blur pass so walls read as cut banks rather than pixel stairs (two passes turned terraces
   into bowls), and the 2D tints as its texture. Balls rest on their own folder's floor. Step depth defaults to 3 units
   (margin is 1) with a slider. No folder labels in 3D; hover names balls and terraces.
+- **Huts** (Nate, 2026-11-20): files are cylinders of one fixed height (1.5 units), footprint = the 2D dot (radius still
+  cube root of size, so footprint no longer encodes size linearly); steps default to 20% of hut height (0.3), slider 0-1.5.
