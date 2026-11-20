@@ -1,8 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dot Cells</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -60,8 +55,6 @@ footer { color: var(--muted); font-size: 13px; max-width: 82ch; }
 footer code { font-family: var(--mono); font-size: 12px; }
 #status { padding: 40px; color: var(--muted); }
 </style>
-</head>
-<body>
 <div class="wrap">
   <header>
     <h1>Dot cells</h1>
@@ -399,5 +392,3 @@ Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then(
   setPlaying(!reduce);
 }).catch((e) => { $('#status').textContent = 'Could not load the history data: ' + e.message; });
 </script>
-</body>
-</html>
