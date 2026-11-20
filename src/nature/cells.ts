@@ -85,14 +85,15 @@ function powerCells(region: Poly, xs: number[], ys: number[], ws: number[]): Pol
 }
 
 /** Split a convex region into cells with areas proportional to `weights`. */
-export function divide(region: Poly, weights: number[], seed: number): Poly[] {
+export function divide(region: Poly, weights: number[], seeds: number[]): Poly[] {
   const n = weights.length;
   if (n === 1) return [region];
   const A = area(region);
   const W = weights.reduce((s, w) => s + w, 0);
   const target = weights.map((w) => (A * w) / W);
-  // initial sites: random points inside the region's bounding box, kept if inside
-  const rand = rng(seed);
+  // initial sites: a point per item, from the item's own seed (its name), relative to the region's
+  // bounding box, so adding or removing a sibling doesn't reshuffle the others
+  const rands = seeds.map((s) => rng(s));
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -105,12 +106,15 @@ export function divide(region: Poly, weights: number[], seed: number): Poly[] {
   }
   const xs: number[] = [];
   const ys: number[] = [];
-  while (xs.length < n) {
-    const x = minX + rand() * (maxX - minX);
-    const y = minY + rand() * (maxY - minY);
-    if (inside(region, x, y)) {
-      xs.push(x);
-      ys.push(y);
+  for (let i = 0; i < n; i++) {
+    for (let tries = 0; ; tries++) {
+      const x = minX + rands[i]() * (maxX - minX);
+      const y = minY + rands[i]() * (maxY - minY);
+      if (inside(region, x, y) || tries > 1000) {
+        xs.push(x);
+        ys.push(y);
+        break;
+      }
     }
   }
   const ws = new Array(n).fill(A / n / 10);
@@ -124,8 +128,8 @@ export function divide(region: Poly, weights: number[], seed: number): Poly[] {
       if (!cells[i].length) {
         // swallowed: re-seed inside the region with the smallest weight
         do {
-          xs[i] = minX + rand() * (maxX - minX);
-          ys[i] = minY + rand() * (maxY - minY);
+          xs[i] = minX + rands[i]() * (maxX - minX);
+          ys[i] = minY + rands[i]() * (maxY - minY);
         } while (!inside(region, xs[i], ys[i]));
         ws[i] = Math.min(...ws) - target[i] / Math.PI;
         continue;
@@ -172,7 +176,7 @@ export function cells(snap: Snapshot): Scene {
     if (d !== snap.root) scene.shapes.push({ k: 'poly', d: d.i, pts: region });
     const kids = [...d.files.map((f) => ({ w: wFile(f.size), f: f.i, d: null as SDir | null })), ...d.dirs.map((c) => ({ w: wDir.get(c)!, f: -1, d: c }))];
     if (!kids.length || region.length < 6) return;
-    const parts = divide(region, kids.map((k) => k.w), hash(d.path || '/'));
+    const parts = divide(region, kids.map((k) => k.w), kids.map((k) => hash(k.d ? k.d.path : snap.files[k.f].path)));
     kids.forEach((k, i) => {
       const p = parts[i];
       if (k.d) split(k.d, p);

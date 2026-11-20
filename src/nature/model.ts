@@ -101,7 +101,7 @@ export interface FileMark {
 export type Shape =
   | { k: 'disc'; d: number; x: number; y: number; r: number } // directory outline
   | { k: 'poly'; d: number; pts: number[] } // directory cell
-  | { k: 'line'; d: number; pts: number[]; w: number[] }; // polyline with a width per vertex (branches, arms, links)
+  | { k: 'line'; d: number; pts: number[]; w: number[]; a?: number; b?: number }; // polyline with a width per vertex (branches, arms, links; a link between two files names them in a, b)
 
 export interface Scene {
   layout: string;

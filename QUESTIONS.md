@@ -223,3 +223,15 @@ published at https://claude.ai/artifact/NHdB9XKY17DDtuBFD93VwE. Calls made:
 - **File size**: radius = 0.5 * (bytes/1000)^0.25, clamped to [0.4, 2.6], shared by all five (cells use the same areas).
 - **Colours**: by folder group (top-level folders, the biggest split until none holds over 1/8 of the files, 9 + "everything
   else") or by file extension.
+
+Animated (Nate asked, 2026-11-20): `node bin/nature-anim.ts` replays ripgrep's first-parent history (rename-following ids from
+the tree model), lays out 160 evenly spaced commits from scratch with all five, and writes a player (out/nature-anim/,
+https://claude.ai/artifact/4Txx1GTB2txJUHojnctfza, ~2.2 MB). Calls made:
+- **Frames**: 160 evenly spaced commits (every ~14), not every commit, to keep the page under 4 MB; tweened with smoothstep.
+- **Tweening**: files matched by identity, folders by path, galaxy arms by index; things that appear grow from nothing,
+  things that vanish shrink away. Cells are resampled to 16 rays from the centroid (folders 24) so they morph vertex by vertex.
+  Coral links cross-fade.
+- **Cells seeding**: each item's starting site now comes from its own name's hash, so a new sibling doesn't reshuffle the
+  others (much smoother over time; also changed the static page slightly).
+- **Colours**: by identity, from the folder groups of the final tree, so a file keeps its colour through the crates/ move.
+- **Encoding**: quantised binary (1/20 unit), shipped as base64 text because artifacts don't serve .bin files.

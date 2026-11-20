@@ -53,7 +53,7 @@ export function coral(snap: Snapshot): Scene {
     scene.marks.push({ f: p.f, x: p.x, y: p.y, r: p.r });
     if (from >= 0) {
       const q = polyps[from];
-      scene.shapes.push({ k: 'line', d: snap.files[p.f].dir.i, pts: [q.x, q.y, p.x, p.y], w: [Math.min(q.r, p.r) * 0.5, Math.min(q.r, p.r) * 0.5] });
+      scene.shapes.push({ k: 'line', d: snap.files[p.f].dir.i, pts: [q.x, q.y, p.x, p.y], w: [Math.min(q.r, p.r) * 0.5, Math.min(q.r, p.r) * 0.5], a: q.f, b: p.f });
     }
     return i;
   };
