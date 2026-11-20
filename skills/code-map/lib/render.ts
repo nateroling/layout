@@ -420,8 +420,13 @@ fit();
 const ORDER = ['added', 'modified', 'renamed', 'deleted'];
 const sortGroups = <T,>(e: [string, T][]) => e.sort((a, b) => (ORDER.indexOf(a[0]) + 1 || 99) - (ORDER.indexOf(b[0]) + 1 || 99));
 
-/** A self-contained HTML page (opens from disk; fonts from Google Fonts when online). */
-export function renderHtml(map: CodeMap, overlay: Overlay = {}): string {
+export interface HtmlOptions {
+  artifact?: boolean; // the page body for a claude.ai Artifact: no doctype/html/head/body tags (the host adds them)
+  pageTitle?: string; // the <title> (browser tab, artifact gallery); default: the overlay's title
+}
+
+/** A self-contained HTML page (opens from disk, or publishes as an Artifact; fonts from Google Fonts when online). */
+export function renderHtml(map: CodeMap, overlay: Overlay = {}, opt: HtmlOptions = {}): string {
   const { svg, data } = prepare(map, overlay, { standalone: false });
   const title = overlay.title ?? `${map.repo} code map`;
   const marks = overlay.files ?? {};
@@ -469,12 +474,12 @@ export function renderHtml(map: CodeMap, overlay: Overlay = {}): string {
 
   const eyebrow = `${map.repo} · ${map.commit.slice(0, 7)} · ${map.date} · ${map.files.length.toLocaleString('en')} files`;
   const sub = overlay.subtitle ?? (Object.keys(marks).length ? '' : map.subject);
-  return `<!doctype html>
+  const page = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>${esc(title)}</title>
+<title>${esc(opt.pageTitle ?? title)}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
@@ -508,4 +513,7 @@ ${list}
 </body>
 </html>
 `;
+  if (!opt.artifact) return page;
+  // an Artifact's host wraps the page in its own skeleton
+  return page.replace(/^<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport"[^\n]*\n/, '').replace('</head>\n<body>\n', '').replace(/<\/body>\n<\/html>\n$/, '');
 }

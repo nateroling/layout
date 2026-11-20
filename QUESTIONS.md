@@ -401,7 +401,10 @@ Calls made:
   Coordinates rounded to 0.01 in the JSON.
 - **Renderer is SVG** (one code path for the static `.svg` and the page) rather than canvas. Fine up to a few
   thousand files; a 20k-file repo would want a canvas page.
-- **Default output** is `code-map-<repo>-<commit>.html` in the current folder; SKILL.md tells Claude to pass
-  `--out` to a scratch folder instead.
+- **Delivery** (Nate, 2026-11-20: publish a self-contained artifact by default): SKILL.md has Claude render with
+  `--artifact` (the page body without a document skeleton, as the Artifact host wants) into a scratch folder
+  and publish it with the Artifact tool; a local file only when asked, or with no Artifact tool. Plain
+  (non-`--artifact`) HTML still opens from disk. Default `<title>`s are short names ("ripgrep PR 2483",
+  "ripgrep code map"); `--page-title` overrides.
 - **Installing**: SKILL.md looks for `codemap.ts` beside itself, else clones this repo to `~/.cache/code-map`,
   so the same SKILL.md works copied into `~/.claude/skills/code-map/` or saved as an account skill alone.

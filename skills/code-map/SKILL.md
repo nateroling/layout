@@ -32,10 +32,12 @@ codemap render MAP.json [--overlay FILE] [--out FILE]...                # draw a
 ```
 
 - `--out` picks the format from the extension: `.html` is an interactive page (pan, zoom, hover, a list of
-  marked files; one self-contained file), `.svg` is a static picture, `.json` is the map data (plus the
-  overlay for `pr`). Repeat `--out` to write several. Without `--out` it writes
-  `code-map-<repo>-<commit or prN>.html` in the current folder, so pass `--out` with a path in a scratch or
-  output folder rather than writing into the user's repo.
+  marked files; one self-contained file with the map and layers baked in), `.svg` is a static picture,
+  `.json` is the map data (plus the overlay for `pr`). Repeat `--out` to write several. Always pass `--out`
+  with a path in a scratch or output folder; never write into the user's repo.
+- `--artifact` writes `.html` as the body of a claude.ai Artifact (no doctype, html, head or body tags; the
+  Artifact host adds them). `--page-title` sets the page's `<title>`; the default is already a short name
+  such as "ripgrep PR 2483" or "ripgrep code map".
 - `pr --pr N` fetches `refs/pull/N/head` from `origin` into `refs/code-map/pr/N` (no `gh` needed; `--remote`
   picks another remote). `--base` defaults to origin's default branch. The map is the base map at the merge
   base, with the branch's changes applied: added files get a spot, modified files are lit, deleted files
@@ -94,8 +96,21 @@ also take `--overlay`, merged over their own marks.
 Units are arbitrary but stable; the root is pinned at (0, 0). A folder's `outline` rings are filled with the
 even-odd rule; `label` is the top of its cell. Parents come before children in `folders`.
 
-## Showing the result
+## Delivering the result
 
-Give the user the HTML page (or publish it as an artifact if they want to share it) and say in a line what
-is marked, such as "2 added, 17 modified". For a PR, mention any deleted or moved files, since those are the
-ghosts and arcs on the map.
+By default, publish the map as an Artifact:
+
+1. Run the command with `--artifact --out <scratch dir>/<name>.html`.
+2. Publish that file with the Artifact tool: icon `map`, and a one-sentence description such as "ripgrep
+   PR 2483 on its code map: 2 files added, 17 modified." The page is self-contained, so it needs no other files.
+3. Give the user the link and say in a line what is marked. For a PR, mention any deleted or moved files,
+   since those are the ghosts and arcs on the map.
+
+Write a local file instead (no `--artifact`, `--out` where the user wants it) when the user asks for a file,
+wants the `.svg` or `.json`, or there is no Artifact tool. A page without `--artifact` opens straight from disk.
+
+## As a building block
+
+Other skills can use code-map as one step: `map --out map.json` (or `pr --out pr.json`) gives positions and
+folder outlines to compute on, and `render map.json --overlay layer.json` draws any layer on the same map.
+Keep the map settings at their defaults so maps from different runs line up.

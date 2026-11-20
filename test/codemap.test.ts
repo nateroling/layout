@@ -161,5 +161,10 @@ test('the CLI writes json, svg and html, and renders a saved map', () => {
   run('pr', repo, '--head', 'feature', '--base', 'main', '--no-cache', '--quiet', '--out', join(out, 'p.json'));
   const p = JSON.parse(readFileSync(join(out, 'p.json'), 'utf8'));
   assert.equal(p.counts.added, 1);
+  run('pr', repo, '--head', 'feature', '--base', 'main', '--no-cache', '--quiet', '--artifact', '--out', join(out, 'a.html'));
+  const art = readFileSync(join(out, 'a.html'), 'utf8');
+  assert.match(art, /^<title>[^<]+ feature changes<\/title>/);
+  assert.ok(!/<!doctype|<html|<head>|<body>|<\/body>|<\/html>/i.test(art), 'an artifact page has no document skeleton');
+  assert.match(art, /<script>window\.CM_DATA = /);
   assert.throws(() => run('map', repo, '--bogus', '1'), /unknown option --bogus/);
 });
