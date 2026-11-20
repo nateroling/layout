@@ -285,3 +285,42 @@ Calls made:
   their lot. Region = metro's whole footprint, so it is as sparse as metro (22 u²/file) but has no empty space.
 - **Player**: generalised a little (meta.title/intro/footer/baseline/dirRays); folders use 40 rays so metro's
   rectangles keep their corners. Shared encoding moved to `src/nature/anim.ts`.
+
+## Flat cities (hierarchy-free, 2026-11-20)
+
+Nate: folders only matter as a way to group files; the absolute hierarchy needn't be legible. Six layouts where each
+folder's own files are one flat cluster and nothing encloses anything. `src/nature/flat.ts`, `node bin/flat.ts` ->
+out/flat/ (nature player, one family; metro and cells-as-districts as references). ripgrep, 80 frames:
+
+| layout | moves | worst step | u²/file | spread |
+|---|---|---|---|---|
+| Metro (ref) | 0.12 | 5.5 | 15 | 1.02 |
+| Cells as districts (ref) | 0.16 | 4.5 | 2 | 1.22 |
+| Homestead | 0.07 | 4.0 | 2.5 | 1.05 |
+| Flat cells | 0.15 | 3.5 | 1.6 | 1.00 |
+| Affinity | 0.21 | 4.9 | 4.6 | 1.07 |
+| Rings | 0.10 | 5.6 | 5.6 | 1.07 |
+| Streets | 0.08 | 4.3 | 2.9 | 1.14 |
+| Hilbert allocator | 0.07 | 3.8 | 2.2 | 1.70 |
+
+Calls made:
+- **Spread** (new metric, also in the player): per folder with >= 3 own files, mean distance of its files to their
+  centroid over that of a round blob of the same files (cell area = the layout's median nearest-neighbour distance
+  squared); file-weighted mean. 1 = tight blob.
+- Homestead, streets, rings and hilbert never move a file that stays in its folder; their nonzero moves are files that
+  changed folder (renames) plus younger discs/blocks being pushed. Their worst steps are big rename commits.
+- **Homestead**: a folder's seed is the nearest square to its parent's seed with a free 3x3 around it; live seeds are
+  reserved for their folder. Folder outline = convex hull of its squares (can overlap neighbours when ragged).
+- **Flat cells**: one power diagram of all folders in a disc of 1.3 squares per file (inertia 0.25, as districts); a newborn
+  site starts 0.03 (region-relative) from its nearest ancestor's site, with the lowest weight.
+- **Affinity**: co-change = commits touching 2..8 folders, cosine-normalised, counted over every commit up to the frame.
+  4 springs per folder (0.03 x weight x stretch), pull back to last position 0.08 per iteration, 80 iterations, then
+  collisions only; disc gap 0.3; root pinned. Stronger springs (0.08) cost moves 0.27 for little visible gain.
+- **Rings**: folder k sits on ray k x golden angle, born at the first free spot along it; distance is a ratchet.
+- **Streets**: blocks of 2 rows, street pitch 3, even streets run east of x=0, odd west; cap per street
+  max(8, 1.2 sqrt(files)) at decision time; blocks only lengthen; dead folders leave vacant lots that a new folder reuses
+  if it fits.
+- **Hilbert**: order-10 curve anchored at the corner (root at index 0); first run max(4, 1.25 n) after the parent's last
+  run; full folder grows its last run in place if free, else takes a new run of half its total.
+- 80 frames (not 100) and 24 folder rays to stay under ~4 MB. Player: families can set `kind` (parser) separately from
+  `name` (data file).

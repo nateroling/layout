@@ -134,3 +134,43 @@ test('cell cities: every file once per frame with a real cell, no overlapping lo
     assert.deepEqual(run(v).map((r) => r.sc), a.map((r) => r.sc), `${v.name}: deterministic`);
   }
 });
+
+test('flat cities: every file once per frame, no two files overlapping, deterministic replay', async () => {
+  const { FLAT } = await import('../src/nature/flat.ts');
+  // growing and churning: root files, nested folders, a folder renamed at k = 5, deletions from k = 4
+  const frames = Array.from({ length: 8 }, (_, k) => {
+    const entries: [string, number][] = [];
+    for (let i = 0; i < 12 * (k + 1); i++) {
+      if (k > 3 && i % 7 === 0) continue;
+      const dir = ['', 'crates/a', 'crates/b/x', 'crates/c', 'docs', k >= 5 ? 'lib2' : 'lib'][i % 6];
+      entries.push([`${dir ? dir + '/' : ''}f${i}.ts`, 100]);
+    }
+    return buildSnapshot('t', entries);
+  });
+  const idOf = (path: string) => Number(path.match(/f(\d+)\.ts$/)![1]);
+  const run = (v: (typeof FLAT)[number]) => {
+    const step = v.make();
+    const seq = new Map<string, number>();
+    return frames.map((snap) => {
+      for (const d of snap.dirs) if (!seq.has(`d:${d.path}`)) seq.set(`d:${d.path}`, seq.size);
+      for (const f of snap.files) if (!seq.has(`f:${idOf(f.path)}`)) seq.set(`f:${idOf(f.path)}`, seq.size);
+      // co-change: every folder pairs with 'docs'
+      const affinity = (d: string): [string, number][] => (d === 'docs' ? [] : [['docs', 0.5]]);
+      return step(snap, { id: (f) => idOf(f.path), seq: (key) => seq.get(key)!, metro: { file: new Map(), dir: new Map() }, affinity });
+    });
+  };
+  for (const v of FLAT) {
+    const a = run(v);
+    a.forEach((sc, k) => {
+      assert.deepEqual(sc.marks.map((m) => m.f).sort((x, y) => x - y), frames[k].files.map((f) => f.i), `${v.name} frame ${k}: files placed`);
+      for (const m of sc.marks) assert.ok(Number.isFinite(m.x) && Number.isFinite(m.y) && area(m.poly) > 1e-6, `${v.name} frame ${k}: real mark`);
+      // marks are r ~ 0.45: centres closer than 0.79 would overlap
+      for (let i = 0; i < sc.marks.length; i++)
+        for (let j = i + 1; j < sc.marks.length; j++) {
+          const d = Math.hypot(sc.marks[i].x - sc.marks[j].x, sc.marks[i].y - sc.marks[j].y);
+          assert.ok(d > 0.79, `${v.name} frame ${k}: files ${sc.marks[i].f} and ${sc.marks[j].f} overlap (${d.toFixed(2)})`);
+        }
+    });
+    assert.deepEqual(run(v), a, `${v.name}: deterministic`);
+  }
+});

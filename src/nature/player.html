@@ -151,7 +151,7 @@ function decode(k) {
   if (cache[k]) return cache[k];
   const h = header(k), R = reader(FAMBUF[fam.name], fam.offsets[k]);
   const marks = () => h.files.map((f) => ({ id: f.id, x: R.xy(), y: R.xy(), r: R.u8() / 50 }));
-  const L = fam.variants.map(() => { const l = PARSE[fam.name](R, h.files, h.dirs, marks); l.b = bounds(l); return l; });
+  const L = fam.variants.map(() => { const l = PARSE[fam.kind || fam.name](R, h.files, h.dirs, marks); l.b = bounds(l); return l; });
   return (cache[k] = { files: h.files, info: h.info, L });
 }
 function bounds(l) {
@@ -321,7 +321,7 @@ function hover(p, ev) {
   tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = ev.clientY + 16 + 'px';
 }
 
-const fmtM = (m) => `moves ${m.move.toFixed(2)} · jumps ${(m.jumps * 100).toFixed(1)}% · worst ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file`;
+const fmtM = (m) => `moves ${m.move.toFixed(2)} · jumps ${(m.jumps * 100).toFixed(1)}% · worst ${m.worst.toFixed(1)} · ${Math.round(m.density)} u²/file` + (m.spread !== undefined ? ` · spread ${m.spread.toFixed(2)}` : '');
 function loadFamily(fam) {
   if (FAMBUF[fam.name]) return Promise.resolve();
   return fetch(fam.name + '.txt').then((r) => r.text()).then((t) => { FAMBUF[fam.name] = Uint8Array.from(atob(t.trim()), (c) => c.charCodeAt(0)).buffer; });
@@ -348,7 +348,7 @@ function showFamily(i, initial) {
       fig.querySelector('.score').textContent = fmtM(v.metrics);
       grid.append(fig);
       const canvas = fig.querySelector('canvas');
-      const p = { kind: fam.name, vi, canvas, ctx: canvas.getContext('2d'), dims: fig.querySelector('small') };
+      const p = { kind: fam.kind || fam.name, vi, canvas, ctx: canvas.getContext('2d'), dims: fig.querySelector('small') };
       panels.push(p);
       canvas.addEventListener('pointermove', (ev) => hover(p, ev));
       canvas.addEventListener('pointerleave', () => { state.hotDir = null; state.hotId = -1; $('#tip').hidden = true; if (!state.playing) render(); });
@@ -368,12 +368,13 @@ function showFamily(i, initial) {
   });
 }
 function scoreTable() {
+  const hasSpread = META.families.some((f) => f.variants.some((v) => v.metrics.spread !== undefined));
   const rows = META.families.flatMap((f) => f.variants.map((v, vi) => {
     const m = v.metrics, base = f.variants[0].metrics;
     const rel = vi ? `${Math.round((m.move / base.move) * 100)}%` : '100%';
-    return `<tr data-fam="${f.name}"><th scope="row">${vi === 0 ? f.title : ''}</th><td>${vi === 0 && !META.baseline ? 'original' : v.title}</td><td>${m.move.toFixed(2)}</td><td>${rel}</td><td>${(m.jumps * 100).toFixed(1)}%</td><td>${m.worst.toFixed(1)}</td><td>${Math.round(m.density)}</td></tr>`;
+    return `<tr data-fam="${f.name}"><th scope="row">${vi === 0 ? f.title : ''}</th><td>${vi === 0 && !META.baseline ? 'original' : v.title}</td><td>${m.move.toFixed(2)}</td><td>${rel}</td><td>${(m.jumps * 100).toFixed(1)}%</td><td>${m.worst.toFixed(1)}</td><td>${Math.round(m.density)}</td>${hasSpread ? `<td>${m.spread.toFixed(2)}</td>` : ''}</tr>`;
   })).join('');
-  $('#scores').innerHTML = `<table><thead><tr><th scope="col">Layout</th><th scope="col">Variant</th><th scope="col">Moves</th><th scope="col">vs ${META.baseline || 'original'}</th><th scope="col">Jumps</th><th scope="col">Worst step</th><th scope="col">u²/file</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('#scores').innerHTML = `<table><thead><tr><th scope="col">Layout</th><th scope="col">Variant</th><th scope="col">Moves</th><th scope="col">vs ${META.baseline || 'original'}</th><th scope="col">Jumps</th><th scope="col">Worst step</th><th scope="col">u²/file</th>${hasSpread ? '<th scope="col">Spread</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function seg(el, on) {
