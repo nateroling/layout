@@ -118,6 +118,17 @@ child to the sibling before it (`LayoutNode.link`; the player carries it in the 
 - `bin/sweep.ts` + `sweep.json`: fixtures × configs → `out/report/index.html` (scoreboard, filmstrips at a
   consistent scale, scrubbable player) plus `metrics.json` / `metrics.csv`.
 
+## code-map skill
+
+`skills/code-map/` packages the Dot Cells layout as a standalone tool and Claude Code skill (see its SKILL.md
+for usage and the overlay and map formats). It is self-contained: nothing in it imports from `src/`
+(`src/nature/dots.ts` re-exports its engine). Layers: `lib/git.ts` (first-parent log, diffs), `lib/tree.ts`
+(path -> id/size, renames keep ids), `lib/dots.ts` (the layout), `lib/layout.ts` (weekly-checkpoint replay,
+cache, `code-map/1` map file), `lib/contour.ts` (folder outlines), `lib/render.ts` (SVG/HTML with overlays),
+`lib/pr.ts` (PR/branch overlay), `codemap.ts` (CLI). The layout core knows nothing about drawing, and the
+renderer only needs file positions and folder outlines, so another stable layout (e.g. rectangles) could feed
+the same renderer and overlays.
+
 ## Fixtures
 
 Public repos of different shapes cloned to `../fixtures/` (not committed) by `scripts/fixtures.sh`,

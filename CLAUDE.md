@@ -18,3 +18,5 @@
   schema entry (type, default, range) and a row in SPEC.md's options table. Bump `EXTRACTOR_VERSION` in
   `src/git/extract.ts` whenever extraction semantics change (it is part of the history cache key).
 - Anything that's a taste/judgment call: make a reasonable default, note it in QUESTIONS.md, keep going.
+- `skills/code-map/` is self-contained (it is copied into skill folders): never import from `src/` there. Bump its
+  `LAYOUT_VERSION` (`lib/layout.ts`) whenever the map of a given history changes; it is part of the cache key.

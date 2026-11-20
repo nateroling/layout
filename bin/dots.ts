@@ -44,7 +44,7 @@ for (let k = 0; k < FRAMES; k++) showAt.add(pick(k, FRAMES));
 for (const c of showAt) simAt.add(c);
 
 const tree = emptyTree();
-const layout = new DotCells();
+const layout = new DotCells(process.env.DOTS_PARAMS ? JSON.parse(process.env.DOTS_PARAMS) : {});
 const moves: Moves = { steps: [], all: [], density: [] };
 let prev: Map<number, [number, number]> | null = null;
 const lastPath = new Map<number, string>();

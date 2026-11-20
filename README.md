@@ -12,6 +12,10 @@ npm test
 
 Requires Node >= 22.18 (runs TypeScript directly). No dependencies. See SPEC.md.
 
+**code-map** (`skills/code-map/`): the Dot Cells layout as a standalone tool and Claude Code skill, a stable map of
+any repo with overlays such as a PR's changed files: `node skills/code-map/codemap.ts pr <repo> --pr 123 --out pr.html`.
+Install the skill by copying or symlinking that folder to `~/.claude/skills/code-map`. See its SKILL.md.
+
 ## Sweeps and the report
 
 ```sh
