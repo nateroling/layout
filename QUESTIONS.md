@@ -190,3 +190,16 @@ re-settles a little. Calls made:
 - **Rotation**: vertex (1,0) is held on the x axis so the city can't slowly turn.
 - **Player**: the mesh is sent per frame (sparse deltas, 1/20 unit); the "moved" outlines only show moves on the underlying grid,
   not the warp's drift. The outer edge of the root platform is extrapolated from the mesh and can look ragged.
+
+## metro-spiral (subfolders spiral like the root)
+
+`metro-spiral` = metro where every district places its children on the root's square spiral (no mirroring), so a folder's
+internal layout is the same at any depth (`node scripts/demo-nested.ts` draws the four-folder case one level down: metro gives
+sub/ 18 × 12, metro-spiral 18 × 9, the same as at the root). Calls made:
+- **No mirroring**: the spiral always starts right, then down, left, up, at every depth, so a district's children also land on
+  the side facing its parent. Mirroring the spiral to start away from the parent is the obvious alternative.
+- **Hugging**: a child still hugs the side of its cell facing the district's lot, and the lot hugs the corner facing the parent
+  (orientation from the cell the district sits in, as in metro).
+
+Results (four public repos) vs metro: compactness about the same (chalk equal, express -1%, vue-core +5%, ripgrep equal); a bit
+less stable (moved / tree change +3% to +18%, disruption up to +54% on express). metro-pack still beats both on both axes.

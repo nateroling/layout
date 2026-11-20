@@ -303,6 +303,26 @@ function metroOrient(s: CityState, path: string): { x: number; y: number } {
   return { x: c ? Math.sign(c) : po.x, y: r ? Math.sign(r) : po.y };
 }
 
+export const metroSpiral = makeCity(
+  'metro-spiral',
+  'Online: metro where every district lays out like the root. Each subfolder\'s children take cells on the same square spiral around its file lot, in all four directions; columns/rows only widen.',
+  (_s, _p, k) => spiralCell(k),
+  spiralOrient,
+);
+
+/**
+ * metro-spiral: every district uses the root's spiral (no mirroring), so a folder's layout does
+ * not depend on where it sits. Orientation only decides which corner of a cell things hug: the
+ * side facing the parent's lot, as in metro (in the lot's own column/row, inherit the parent's).
+ */
+function spiralOrient(s: CityState, path: string): { x: number; y: number } {
+  if (path === '') return { x: 1, y: 1 };
+  const parent = dirname(path);
+  const po = spiralOrient(s, parent);
+  const [c, r] = spiralCell(s.dirs.get(parent)!.cells.get(path)!);
+  return { x: c ? Math.sign(c) : po.x, y: r ? Math.sign(r) : po.y };
+}
+
 /** Step 4 of step(): widen columns/rows to fit their contents (never shrink). */
 export function ratchet(s: CityState, g: Geo, cellOf: CellFn): void {
   const paths = [...s.dirs.keys()].sort((a, b) => depth(b) - depth(a) || cmp(a, b));
