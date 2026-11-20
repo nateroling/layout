@@ -96,7 +96,7 @@ footer code { font-family: var(--mono); font-size: 12px; }
     <p>Measured over every frame step: how far each file that exists in both frames moved, in file widths (the square root of the layout’s area per file), with the root pinned where the layout puts it. <b>Moves</b> is the mean per file per step; <b>jumps</b> the share of moves over two widths; <b>worst step</b> the largest mean over one step, which is when a big subtree shifted; <b>u²/file</b> is the bounding box per file, so lower is denser.</p>
     <div class="tablewrap" id="scores"></div>
   </section>
-  <footer>Frames are evenly spaced commits on the first-parent history; the variations that remember only see those frames. Folders are matched by path, so a renamed folder counts as new. Files keep their identity (and colour) through renames, so moves glide instead of popping. Folder colours come from the final tree. Source: <code>src/nature/</code>, regenerate with <code>node bin/nature-anim.ts</code>.</footer>
+  <footer id="footer">Frames are evenly spaced commits on the first-parent history; the variations that remember only see those frames. Folders are matched by path, so a renamed folder counts as new. Files keep their identity (and colour) through renames, so moves glide instead of popping. Folder colours come from the final tree. Source: <code>src/nature/</code>, regenerate with <code>node bin/nature-anim.ts</code>.</footer>
 </div>
 <div id="tip" hidden></div>
 
@@ -132,7 +132,7 @@ const PARSE = {
   tree: (R, files, dirs, marks) => ({ marks: marks(), dirs: dirs.map((d) => ({ key: d.path, bx: R.xy(), by: R.xy(), tx: R.xy(), ty: R.xy(), w0: R.u8() / 20, w1: R.u8() / 20 })) }),
   cells: (R, files, dirs) => {
     const cm = files.map((f) => { const m = { id: f.id, x: R.xy(), y: R.xy(), r: R.u8() / 50, rays: [] }; for (let j = 0; j < 16; j++) m.rays.push(R.u8() / 64); return m; });
-    const cd = dirs.map((d) => { const m = { key: d.path, x: R.xy(), y: R.xy(), r: R.u16() / 20, rays: [] }; for (let j = 0; j < 24; j++) m.rays.push(R.u8() / 64); return m; });
+    const cd = dirs.map((d) => { const m = { key: d.path, x: R.xy(), y: R.xy(), r: R.u16() / 20, rays: [] }; for (let j = 0, k = META.dirRays || 24; j < k; j++) m.rays.push(R.u8() / 64); return m; });
     return { marks: cm, dirs: cd.filter((d) => d.r > 0) };
   },
   coral: (R, files, dirs, marks) => {
@@ -342,9 +342,9 @@ function showFamily(i, initial) {
     grid.innerHTML = '';
     fam.variants.forEach((v, vi) => {
       const fig = document.createElement('figure');
-      const title = vi === 0 ? `${fam.title}, original` : v.title;
+      const title = vi === 0 && !META.baseline ? `${fam.title}, original` : v.title;
       fig.innerHTML = `<figcaption><h2>${title}<small></small><button type="button" class="zoom" id="zoom-${v.name}" aria-pressed="false">Enlarge</button></h2><div class="score"></div><p></p></figcaption><canvas role="img" aria-label="${title} over time"></canvas>`;
-      fig.querySelector('p').textContent = vi === 0 ? fam.blurb : v.blurb;
+      fig.querySelector('p').textContent = vi === 0 && !META.baseline ? fam.blurb : v.blurb;
       fig.querySelector('.score').textContent = fmtM(v.metrics);
       grid.append(fig);
       const canvas = fig.querySelector('canvas');
@@ -371,9 +371,9 @@ function scoreTable() {
   const rows = META.families.flatMap((f) => f.variants.map((v, vi) => {
     const m = v.metrics, base = f.variants[0].metrics;
     const rel = vi ? `${Math.round((m.move / base.move) * 100)}%` : '100%';
-    return `<tr data-fam="${f.name}"><th scope="row">${vi === 0 ? f.title : ''}</th><td>${vi === 0 ? 'original' : v.title}</td><td>${m.move.toFixed(2)}</td><td>${rel}</td><td>${(m.jumps * 100).toFixed(1)}%</td><td>${m.worst.toFixed(1)}</td><td>${Math.round(m.density)}</td></tr>`;
+    return `<tr data-fam="${f.name}"><th scope="row">${vi === 0 ? f.title : ''}</th><td>${vi === 0 && !META.baseline ? 'original' : v.title}</td><td>${m.move.toFixed(2)}</td><td>${rel}</td><td>${(m.jumps * 100).toFixed(1)}%</td><td>${m.worst.toFixed(1)}</td><td>${Math.round(m.density)}</td></tr>`;
   })).join('');
-  $('#scores').innerHTML = `<table><thead><tr><th scope="col">Layout</th><th scope="col">Variant</th><th scope="col">Moves</th><th scope="col">vs original</th><th scope="col">Jumps</th><th scope="col">Worst step</th><th scope="col">u²/file</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('#scores').innerHTML = `<table><thead><tr><th scope="col">Layout</th><th scope="col">Variant</th><th scope="col">Moves</th><th scope="col">vs ${META.baseline || 'original'}</th><th scope="col">Jumps</th><th scope="col">Worst step</th><th scope="col">u²/file</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function seg(el, on) {
@@ -385,7 +385,10 @@ Promise.all([fetch('meta.json').then((r) => r.json()), fetch('frames.txt').then(
   META.colourArr = Uint8Array.from(atob(META.colour), (c) => c.charCodeAt(0));
   readColours();
   $('#status').remove();
-  $('#intro').textContent = `The five nature layouts and three steadier variations of each, replayed over ${META.repo}’s history: ${META.frames.length} frames across ${META.commits.toLocaleString('en')} commits. Pick a layout to see the original beside its variations. The variations may remember earlier frames but never peek at later ones. Hover a file to light up its folder.`;
+  $('#intro').textContent = META.intro || `The five nature layouts and three steadier variations of each, replayed over ${META.repo}’s history: ${META.frames.length} frames across ${META.commits.toLocaleString('en')} commits. Pick a layout to see the original beside its variations. The variations may remember earlier frames but never peek at later ones. Hover a file to light up its folder.`;
+  if (META.title) { document.title = META.title; $('h1').textContent = META.title; }
+  if (META.footer) $('#footer').innerHTML = META.footer;
+  if (META.families.length < 2) $('#family').parentElement.hidden = true;
   $('#family').innerHTML = META.families.map((f, i) => `<button type="button" id="f-${f.name}" data-v="${i}" aria-pressed="${i === 0}">${f.title}</button>`).join('');
   seg($('#family'), (v) => showFamily(+v));
   scoreTable();

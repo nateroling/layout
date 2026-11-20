@@ -257,3 +257,31 @@ Calls made:
 - **Coral polyps keep their birth size** in the living-colony variants (a grown file would otherwise overlap its neighbours).
 - **Galaxy variants use a fixed 3 arms** (the original picks 2-4 by size, which reshuffles everything when the count changes).
 - Birth-order variants for coral and galaxy barely help or are worse; kept as the honest stateless baseline.
+
+## Cell cities (cells + metro, 2026-11-20)
+
+Nate asked how cells could combine with the city layouts, and to build all three ideas. `src/nature/cellcity.ts`,
+`node bin/cellcity.ts` -> out/cellcity/ (the nature player with one family: metro, cells warm+inertia, and the three).
+ripgrep, 100 frames (moves in file widths per frame step; metro 0.10, cells 0.18):
+
+| variant | moves | worst step | u²/file |
+|---|---|---|---|
+| Cells as districts | 0.14 | 4.0 | 1.6 |
+| Cells all the way down | 0.18 | 4.7 | 2.1 |
+| Metro skeleton, cells skin | 0.21 | 5.8 | 22 |
+
+Calls made:
+- **Count, not size**: all three weigh files by count, as metro does, so an edit never moves anything (the cells reference
+  still uses size).
+- **Districts = top-level folders, opened up**: a folder that mostly holds folders (>= 2 subfolders, own files <= 10% of its
+  subtree, e.g. crates/) is replaced by its subfolders; otherwise ripgrep is one giant crates/ district. Region area is 1.3
+  grid squares per file. A file keeps its square while it stays in its district; newcomers take the free square nearest
+  their metro position relative to the district (metro block scaled to the region's area).
+- **All the way down**: a folder's own files are one block cut into lots, two rows back to back along the block's long
+  axis (hysteresis: turns only at 1.4x), lots in birth order; files keep their row, newcomers join the shorter row.
+- **Seeded**: fully pinned sites (every file at its metro square) gave slivers and badly wrong areas, because metro's lots
+  are tight and its streets wide. Now folder and lot sites are anchored at metro but may drift up to half their cell's
+  natural radius (TETHER = 0.5; 1 looks evener but moves 0.26), drift and weights warm-started; files are free cells in
+  their lot. Region = metro's whole footprint, so it is as sparse as metro (22 u²/file) but has no empty space.
+- **Player**: generalised a little (meta.title/intro/footer/baseline/dirRays); folders use 40 rays so metro's
+  rectangles keep their corners. Shared encoding moved to `src/nature/anim.ts`.

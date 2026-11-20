@@ -84,3 +84,53 @@ test('nature stable variants: every file once per frame, deterministic replay', 
     assert.deepEqual(run(v), a, `${v.name}: deterministic`);
   }
 });
+
+test('cell cities: every file once per frame with a real cell, no overlapping lots, deterministic replay', async () => {
+  const { CELL_CITIES } = await import('../src/nature/cellcity.ts');
+  const { metro } = await import('../src/strategies/city.ts');
+  const { mergeOptions } = await import('../src/engine.ts');
+  const { applyCommit, emptyTree } = await import('../src/model/tree.ts');
+  // growing and churning, with a container folder (crates/) whose subfolders become districts
+  const lists = Array.from({ length: 8 }, (_, k) => {
+    const out: string[] = [];
+    for (let i = 0; i < 12 * (k + 1); i++) {
+      if (k > 3 && i % 7 === 0) continue;
+      const dir = ['', 'crates/a', 'crates/b/x', 'crates/c', 'docs', k >= 5 ? 'lib2' : 'lib'][i % 6];
+      out.push(`${dir ? dir + '/' : ''}f${i}.ts`);
+    }
+    return out;
+  });
+  const run = (v: (typeof CELL_CITIES)[number]) => {
+    const step = v.make();
+    const tree = emptyTree();
+    const mctx = { options: mergeOptions(metro, {}) };
+    const ms = metro.init(mctx);
+    const seq = new Map<string, number>();
+    let prev = new Set<string>();
+    return lists.map((paths, k) => {
+      const now = new Set(paths);
+      const changes = [...[...prev].filter((p) => !now.has(p)).map((path) => ({ type: 'D' as const, path, size: 0 })), ...paths.filter((p) => !prev.has(p)).map((path) => ({ type: 'A' as const, path, size: 100 }))];
+      const c = { index: k, sha: `s${k}`, time: k, author: 'a', subject: '', changes };
+      metro.step(ms, tree, c, applyCommit(tree, c, true), mctx);
+      prev = now;
+      const snap = buildSnapshot('t', paths.map((p) => [p, 100] as [string, number]));
+      const ids = snap.files.map((f) => tree.files.get(f.path)!.id);
+      for (const id of ids) if (!seq.has(`f:${id}`)) seq.set(`f:${id}`, seq.size);
+      const m = { file: new Map(), dir: new Map() };
+      for (const n of metro.frame(ms, tree, c, mctx)) (n.kind === 'file' ? m.file : m.dir).set(n.path, n);
+      return { snap, sc: step(snap, { id: (f) => ids[f.i], seq: (key) => seq.get(key) ?? Infinity, metro: m }) };
+    });
+  };
+  for (const v of CELL_CITIES) {
+    const a = run(v);
+    a.forEach(({ snap, sc }, k) => {
+      assert.deepEqual(sc.marks.map((m) => m.f).sort((x, y) => x - y), snap.files.map((f) => f.i), `${v.name} frame ${k}: files placed`);
+      for (const m of sc.marks) assert.ok(Number.isFinite(m.x) && Number.isFinite(m.y) && m.poly && area(m.poly) > 1e-6, `${v.name} frame ${k}: real cell for file ${m.f}`);
+      if (v.name === 'districts') {
+        const sq = sc.marks.map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`);
+        assert.equal(new Set(sq).size, sq.length, `districts frame ${k}: two files on one grid square`);
+      }
+    });
+    assert.deepEqual(run(v).map((r) => r.sc), a.map((r) => r.sc), `${v.name}: deterministic`);
+  }
+});

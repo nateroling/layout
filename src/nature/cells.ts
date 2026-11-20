@@ -9,7 +9,7 @@
 
 import { fileRadius, hash, rng, type Scene, type SDir, type SFile, type Snapshot } from './model.ts';
 
-type Poly = number[]; // [x0,y0,x1,y1,...], counter-clockwise
+export type Poly = number[]; // [x0,y0,x1,y1,...], counter-clockwise
 
 const ITERS = 200;
 
@@ -22,7 +22,7 @@ export function area(p: Poly): number {
   return s / 2;
 }
 
-function centroid(p: Poly): [number, number] {
+export function centroid(p: Poly): [number, number] {
   let cx = 0;
   let cy = 0;
   let a = 0;
@@ -38,7 +38,7 @@ function centroid(p: Poly): [number, number] {
 }
 
 /** Keep the side of the line where nx*x + ny*y <= c. */
-function clip(p: Poly, nx: number, ny: number, c: number): Poly {
+export function clip(p: Poly, nx: number, ny: number, c: number): Poly {
   const out: Poly = [];
   const n = p.length;
   for (let i = 0; i < n; i += 2) {
@@ -58,7 +58,7 @@ function clip(p: Poly, nx: number, ny: number, c: number): Poly {
   return out;
 }
 
-function inside(p: Poly, x: number, y: number): boolean {
+export function inside(p: Poly, x: number, y: number): boolean {
   for (let i = 0, n = p.length; i < n; i += 2) {
     const j = (i + 2) % n;
     if ((p[j] - p[i]) * (y - p[i + 1]) - (p[j + 1] - p[i + 1]) * (x - p[i]) < 0) return false;
@@ -67,7 +67,7 @@ function inside(p: Poly, x: number, y: number): boolean {
 }
 
 /** Power cells of the sites, clipped to the convex region. */
-function powerCells(region: Poly, xs: number[], ys: number[], ws: number[]): Poly[] {
+export function powerCells(region: Poly, xs: number[], ys: number[], ws: number[]): Poly[] {
   const cells: Poly[] = [];
   for (let i = 0; i < xs.length; i++) {
     let p = region;
